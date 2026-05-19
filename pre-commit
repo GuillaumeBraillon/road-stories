@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Hook pre-commit : Synchronise automatiquement la version de package.json avec CHANGELOG.md
+# Ce hook s'exécute AVANT chaque commit et met à jour package.json si nécessaire
+# Run auto-fix (Prettier + ESLint --fix + tsc check). If fixes change files, stage them for commit.
+echo "🔧 Running pre-commit fixes: npm run fix"
+if npm run fix; then
+  echo "✅ Fixes applied. Staging changes..."
+  git add -A
+else
+  echo "❌ 'npm run fix' failed — aborting commit. Correct errors then retry."
+  exit 1
+fi
+
+# Extraire la dernière version du CHANGELOG (format: ## [X.Y.Z])
+CHANGELOG_VERSION=$(grep -m 1 "^## \[" CHANGELOG.md | sed -E 's/^## \[([0-9]+\.[0-9]+\.[0-9]+)\].*/\1/')
+
+if [ -z "$CHANGELOG_VERSION" ]; then
+  # Pas de version trouvée dans le CHANGELOG, on laisse passer
+  exit 0
+fi
+
+# Extraire la version actuelle de package.json
+PACKAGE_VERSION=$(grep -m 1 '"version":' package.json | sed -E 's/.*"version": "([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
+
+if [ "$CHANGELOG_VERSION" != "$PACKAGE_VERSION" ]; then
+  echo "🔄 Synchronisation version: CHANGELOG v$CHANGELOG_VERSION → package.json"
+  
+  # Mettre à jour package.json (compatible macOS et Linux)
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    sed -i '' "s/\"version\": \"$PACKAGE_VERSION\"/\"version\": \"$CHANGELOG_VERSION\"/" package.json
+  else
+    # Linux
+    sed -i "s/\"version\": \"$PACKAGE_VERSION\"/\"version\": \"$CHANGELOG_VERSION\"/" package.json
+  fi
+  
+  # Ajouter package.json au commit en cours
+  git add package.json
+  
+  echo "✅ package.json mis à jour automatiquement (v$CHANGELOG_VERSION)"
+else
+  echo "✅ Version déjà synchronisée (v$PACKAGE_VERSION)"
+fi
+
+exit 0
