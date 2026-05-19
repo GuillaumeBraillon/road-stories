@@ -12,8 +12,14 @@ export type Theme = {
   id: string;
   label: string;
   enabled: boolean;
-  /** Filtres OSM utilisés dans la requête Overpass, ex: ['"historic"', '"tourism"="museum"'] */
   osmFilters: string[];
+};
+
+export type ThemeGroup = {
+  id: string;
+  label: string;
+  icon: string;
+  subThemes: Theme[];
 };
 
 export type AppStatus = "idle" | "active" | "speaking";

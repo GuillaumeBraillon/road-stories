@@ -97,19 +97,28 @@ export function useRoadStories(themes: Theme[]): {
 
         if (!newPOI) return;
 
-        // Le POI n'est marqué comme traité qu'après la génération du message.
-        // Ainsi, si Wikipedia ou Gemini échoue, le prochain tick peut réessayer.
+        const enabledThemes = themesRef.current.filter((t) => t.enabled).map((t) => t.label);
+
+        // Wikipedia — résolu avant de déclencher l'état "speaking" pour éviter un flash d'UI inutile
+        logger.debug("tick", "Wikipedia...");
+        const wikiTag = newPOI.tags["wikipedia"];
+        const wikiTitle = wikiTag ? wikiTag.replace(/^\w{2}:/, "") : newPOI.name;
+        const wikipediaSummary = await getWikipediaSummary(wikiTitle);
+
+        // Panneau indicateur sans fiche Wikipedia : contexte insuffisant pour un message fiable
+        if (wikipediaSummary === null && newPOI.tags["information"] === "guidepost") {
+          logger.debug("tick", "POI ignoré (guidepost sans Wikipedia) :", newPOI.name);
+          triggeredPOIs.current.add(newPOI.id);
+          return;
+        }
+
+        // À partir d'ici on génère et lit un message — activer l'état "speaking"
+        // Le POI n'est marqué comme traité qu'après la génération, pour permettre un retry si Gemini échoue.
         isSpeakingRef.current = true;
         setIsSpeaking(true);
         didStartSpeaking = true;
         setCurrentPOIName(newPOI.name);
 
-        const enabledThemes = themesRef.current.filter((t) => t.enabled).map((t) => t.label);
-
-        logger.debug("tick", "Wikipedia...");
-        const wikiTag = newPOI.tags["wikipedia"];
-        const wikiTitle = wikiTag ? wikiTag.replace(/^\w{2}:/, "") : newPOI.name;
-        const wikipediaSummary = await getWikipediaSummary(wikiTitle);
         logger.debug("tick", "Gemini...");
         const message = await generateRoadMessage({
           poiName: newPOI.name,

@@ -1,59 +1,187 @@
 import { useState } from "react";
-import type { Theme } from "./types";
+import type { Theme, ThemeGroup } from "./types";
 import { useRoadStories } from "./hooks/useRoadStories";
 import { ToggleButton } from "./components/ToggleButton";
 import { StatusIndicator } from "./components/StatusIndicator";
 import { ThemeSelector } from "./components/ThemeSelector";
 
-const DEFAULT_THEMES: Theme[] = [
+const DEFAULT_THEME_GROUPS: ThemeGroup[] = [
   {
     id: "patrimoine",
-    label: "Patrimoine & histoire",
-    enabled: true,
-    osmFilters: ['"historic"', '"waterway"', '"geological"="volcanic_caldera_rim"', '"geological"="palaeontological_site"', '"geological"="meteor_crater"'],
+    label: "Patrimoine",
+    icon: "🏰",
+    subThemes: [
+      {
+        id: "chateaux",
+        label: "Châteaux & fortifications",
+        enabled: true,
+        osmFilters: ['"historic"="castle"', '"historic"="fort"', '"historic"="city_gate"', '"historic"="tower"'],
+      },
+      {
+        id: "monuments",
+        label: "Monuments & mémoriaux",
+        enabled: true,
+        osmFilters: ['"historic"="monument"', '"historic"="memorial"', '"historic"="boundary_stone"', '"historic"="milestone"'],
+      },
+      {
+        id: "archeologie",
+        label: "Sites archéologiques & ruines",
+        enabled: true,
+        osmFilters: ['"historic"="archaeological_site"', '"historic"="ruins"', '"historic"="roman_road"'],
+      },
+      {
+        id: "patrimoine_industriel",
+        label: "Patrimoine industriel",
+        enabled: false,
+        osmFilters: ['"historic"="industrial"', '"historic"="mine"', '"man_made"="windmill"', '"historic"="aqueduct"'],
+      },
+      {
+        id: "geologie",
+        label: "Curiosités géologiques",
+        enabled: false,
+        osmFilters: [
+          '"geological"="volcanic_caldera_rim"',
+          '"geological"="palaeontological_site"',
+          '"geological"="meteor_crater"',
+          '"geological"="glacial_erratic"',
+        ],
+      },
+    ],
   },
   {
-    id: "tourisme",
-    label: "Attractions touristiques",
-    enabled: true,
-    osmFilters: [
-      '"tourism"="attraction"',
-      '"tourism"="museum"',
-      '"tourism"="artwork"',
-      '"tourism"="information"',
-      '"tourism"="aquarium"',
-      '"tourism"="theme_park"',
-      '"tourism"="viewpoint"',
-      '"tourism"="zoo"',
-      '"tourism"="yes"',
-      '"amenity"="arts_centre"',
-      '"amenity"="planetarium"',
-      '"amenity"="bbq"',
-      '"boundary"="historic"',
-      '"boundary"="national_park"',
+    id: "culture",
+    label: "Culture & Arts",
+    icon: "🎨",
+    subThemes: [
+      {
+        id: "musees",
+        label: "Musées",
+        enabled: true,
+        osmFilters: ['"tourism"="museum"'],
+      },
+      {
+        id: "art",
+        label: "Art & sculptures",
+        enabled: true,
+        osmFilters: ['"tourism"="artwork"', '"amenity"="arts_centre"', '"tourism"="gallery"'],
+      },
+      {
+        id: "spectacles",
+        label: "Théâtres & opéras",
+        enabled: false,
+        osmFilters: ['"amenity"="theatre"', '"amenity"="opera"'],
+      },
+      {
+        id: "sciences",
+        label: "Sciences & planétariums",
+        enabled: false,
+        osmFilters: ['"amenity"="planetarium"', '"tourism"="aquarium"'],
+      },
     ],
   },
   {
     id: "nature",
-    label: "Nature & paysages",
-    enabled: true,
-    osmFilters: ['"natural"="peak"', '"natural"="waterfall"', '"natural"="cave_entrance"', '"water"'],
+    label: "Nature & Paysages",
+    icon: "🌿",
+    subThemes: [
+      {
+        id: "sommets",
+        label: "Sommets & reliefs",
+        enabled: true,
+        osmFilters: ['"natural"="peak"', '"natural"="ridge"', '"natural"="cliff"'],
+      },
+      {
+        id: "eau",
+        label: "Chutes d'eau & lacs",
+        enabled: true,
+        osmFilters: ['"natural"="waterfall"', '"water"="lake"', '"water"="reservoir"'],
+      },
+      {
+        id: "grottes",
+        label: "Grottes & cavernes",
+        enabled: true,
+        osmFilters: ['"natural"="cave_entrance"'],
+      },
+      {
+        id: "parcs_naturels",
+        label: "Parcs naturels & réserves",
+        enabled: true,
+        osmFilters: ['"boundary"="national_park"', '"leisure"="nature_reserve"', '"boundary"="protected_area"'],
+      },
+      {
+        id: "forets",
+        label: "Forêts remarquables",
+        enabled: false,
+        osmFilters: ['"natural"="wood"', '"landuse"="forest"'],
+      },
+    ],
+  },
+  {
+    id: "tourisme",
+    label: "Tourisme & Loisirs",
+    icon: "🎡",
+    subThemes: [
+      {
+        id: "points_de_vue",
+        label: "Points de vue panoramiques",
+        enabled: true,
+        osmFilters: ['"tourism"="viewpoint"'],
+      },
+      {
+        id: "attractions",
+        label: "Attractions & parcs",
+        enabled: false,
+        osmFilters: ['"tourism"="theme_park"', '"tourism"="zoo"', '"tourism"="attraction"'],
+      },
+    ],
   },
   {
     id: "religion",
     label: "Lieux de culte",
-    enabled: false,
-    osmFilters: ['"amenity"="place_of_worship"'],
+    icon: "⛪",
+    subThemes: [
+      {
+        id: "eglises",
+        label: "Églises & cathédrales",
+        enabled: false,
+        osmFilters: ['"amenity"="place_of_worship"', '"building"="cathedral"', '"building"="church"'],
+      },
+      {
+        id: "abbayes",
+        label: "Abbayes & monastères",
+        enabled: false,
+        osmFilters: ['"historic"="monastery"', '"historic"="abbey"'],
+      },
+    ],
   },
 ];
 
+function flattenThemes(groups: ThemeGroup[]): Theme[] {
+  return groups.flatMap((g) => g.subThemes);
+}
+
 function App() {
-  const [themes, setThemes] = useState<Theme[]>(DEFAULT_THEMES);
+  const [themeGroups, setThemeGroups] = useState<ThemeGroup[]>(DEFAULT_THEME_GROUPS);
 
-  const { isActive, setIsActive, status, currentPOIName } = useRoadStories(themes);
+  const { isActive, setIsActive, status, currentPOIName } = useRoadStories(flattenThemes(themeGroups));
 
-  function handleThemeToggle(id: string) {
-    setThemes((prev) => prev.map((t) => (t.id === id ? { ...t, enabled: !t.enabled } : t)));
+  function handleThemeToggle(themeId: string) {
+    setThemeGroups((prev) =>
+      prev.map((group) => ({
+        ...group,
+        subThemes: group.subThemes.map((t) => (t.id === themeId ? { ...t, enabled: !t.enabled } : t)),
+      }))
+    );
+  }
+
+  function handleGroupToggle(groupId: string) {
+    setThemeGroups((prev) =>
+      prev.map((group) => {
+        if (group.id !== groupId) return group;
+        const allEnabled = group.subThemes.every((t) => t.enabled);
+        return { ...group, subThemes: group.subThemes.map((t) => ({ ...t, enabled: !allEnabled })) };
+      })
+    );
   }
 
   return (
@@ -67,7 +195,7 @@ function App() {
       </div>
 
       <div className="w-full max-w-sm overflow-y-auto">
-        <ThemeSelector themes={themes} onToggle={handleThemeToggle} />
+        <ThemeSelector themeGroups={themeGroups} onToggleTheme={handleThemeToggle} onToggleGroup={handleGroupToggle} />
       </div>
     </div>
   );

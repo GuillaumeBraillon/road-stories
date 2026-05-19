@@ -5,6 +5,24 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-05-19
+
+### Ajouté
+
+- Architecture `ThemeGroup` dans `App.tsx` — les thèmes sont regroupés en 5 catégories (Patrimoine, Culture & Arts, Nature & Paysages, Tourisme & Loisirs, Lieux de culte) avec icône et sous-thèmes activables individuellement
+- `ALWAYS_ACTIVE_FILTERS` dans `overpass.ts` — `tourism=information` toujours inclus indépendamment des thèmes sélectionnés
+- Filtrage des guideposts sans fiche Wikipedia dans `useRoadStories.ts` — les panneaux indicateurs sans contexte suffisant sont ignorés silencieusement
+
+### Modifié
+
+- `getNodeName` + `isMeaningfulName` fusionnés en `resolvePoiName` dans `overpass.ts` — résolution du nom OSM avec filtrage des noms génériques intégré ; la fonction retourne `null` directement plutôt qu'un post-check externe
+- `GENERIC_NAMES` dans `overpass.ts` — détection des noms d'infrastructure routière (`tunnel`, `rue`, `carrefour`…) et de types OSM non spécifiques (`ruins`, `building`) désormais intégrée dans `resolvePoiName`
+- `useRoadStories.ts` — récupération Wikipedia et skip guidepost déplacés **avant** l'activation de l'état `speaking` pour éviter un flash d'UI inutile sur les POIs ignorés
+- `inscription` et `information` ajoutés dans `CULTURAL_TAG_PREFIXES` de `gemini.ts` — les textes gravés et les types de panneaux sont transmis à Gemini
+- Filtres OSM par thème enrichis dans `DEFAULT_THEME_GROUPS` (Patrimoine : 5 sous-thèmes ; Culture, Nature, Religion : nouveaux types ajoutés)
+
+---
+
 ## [0.3.0] - 2026-05-19
 
 ### Ajouté

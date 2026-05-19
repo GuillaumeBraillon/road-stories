@@ -58,6 +58,8 @@ const CULTURAL_TAG_PREFIXES = [
   "start_date",
   "end_date",
   "description",
+  "inscription",
+  "information",
   "ele",
   "height",
 ];

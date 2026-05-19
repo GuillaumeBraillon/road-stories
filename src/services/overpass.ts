@@ -28,10 +28,9 @@ function buildQuery(lat: number, lng: number, radiusMeters: number, osmFilters: 
 
 function nodeToPoI(node: OverpassNode): POI {
   const tags = node.tags ?? {};
-  const name = tags["name:fr"] ?? tags["name"] ?? `OSM ${node.id}`;
   return {
     id: String(node.id),
-    name,
+    name: resolvePoiName(tags) ?? `OSM ${node.id}`,
     lat: node.lat,
     lng: node.lon,
     tags,
@@ -60,35 +59,75 @@ async function fetchOverpass(url: string, body: string): Promise<OverpassRespons
   }
 }
 
-// Noms OSM génériques qui correspondent à de l'infrastructure routière sans intérêt culturel
-const GENERIC_NAMES = new Set(["tunnel", "route", "chemin", "rue", "avenue", "passage", "carrefour", "échangeur", "bretelle", "virage", "col"]);
+/** Noms trop génériques pour identifier un site culturel (infrastructure routière ou type OSM non spécifique) */
+const GENERIC_NAMES = new Set([
+  "tunnel",
+  "route",
+  "chemin",
+  "rue",
+  "avenue",
+  "passage",
+  "carrefour",
+  "échangeur",
+  "bretelle",
+  "virage",
+  "col",
+  "ruins",
+  "building",
+]);
 
-function isMeaningfulName(name: string): boolean {
-  return !GENERIC_NAMES.has(name.trim().toLowerCase());
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, " ");
 }
 
-export async function getNearbyPOIs(coords: Coords, themes: Theme[], radiusMeters: number = 500): Promise<POI[]> {
-  const activeFilters = themes.filter((t) => t.enabled).flatMap((t) => t.osmFilters);
-  if (activeFilters.length === 0) return [];
+/**
+ * Résout le nom d'affichage d'un nœud OSM par ordre de priorité :
+ * 1. `name:fr` / `name` explicite — sauf si générique (infrastructure routière)
+ * 2. `inscription` (texte gravé sur le monument)
+ * 3. Valeur de `historic` — sauf si générique (ex : «ruins», «building»)
+ * 4. Valeur de `tourism` — sauf «yes» et «iformation» (trop vague)
+ * 5. Valeur de `natural`
+ * Retourne `null` si aucun nom significatif n'est dérivable.
+ */
+function resolvePoiName(tags: Record<string, string>): string | null {
+  const explicit = tags["name:fr"] ?? tags["name"];
+  if (explicit) return GENERIC_NAMES.has(explicit.trim().toLowerCase()) ? null : explicit;
 
-  const query = buildQuery(coords.lat, coords.lng, radiusMeters, activeFilters);
+  if (tags["inscription"]) return tags["inscription"];
+
+  const historic = tags["historic"];
+  if (historic && historic !== "yes" && !GENERIC_NAMES.has(historic)) return capitalize(historic);
+
+  const tourism = tags["tourism"];
+  if (tourism && tourism !== "yes" && tourism !== "information") return capitalize(tourism);
+
+  const natural = tags["natural"];
+  if (natural) return capitalize(natural);
+
+  return null;
+}
+
+/** Filtres OSM toujours actifs, indépendamment des thèmes sélectionnés */
+const ALWAYS_ACTIVE_FILTERS = ['"tourism"="information"'];
+
+export async function getNearbyPOIs(coords: Coords, themes: Theme[], radiusMeters: number = 500): Promise<POI[]> {
+  const themeFilters = themes.filter((t) => t.enabled).flatMap((t) => t.osmFilters);
+  const allFilters = [...new Set([...ALWAYS_ACTIVE_FILTERS, ...themeFilters])];
+  const query = buildQuery(coords.lat, coords.lng, radiusMeters, allFilters);
   logger.debug("overpass", "Query :\n" + query);
-  const body = `data=${encodeURIComponent(query)}`;
 
   let lastError: unknown;
 
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
-      const data = await fetchOverpass(endpoint, body);
+      const data = await fetchOverpass(endpoint, `data=${encodeURIComponent(query)}`);
       const seenNames = new Set<string>();
       return data.elements
         .filter((el) => {
           if (!el.lat) return false;
 
-          const name = el.tags?.["name:fr"] ?? el.tags?.["name"];
+          const name = resolvePoiName(el.tags ?? {});
           if (!name) return false;
-
-          if (!isMeaningfulName(name)) return false;
 
           if (seenNames.has(name)) return false;
           seenNames.add(name);
