@@ -5,7 +5,14 @@ export function speak(text: string): Promise<void> {
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
     utterance.onend = () => resolve();
-    utterance.onerror = (event) => reject(new Error(`TTS error: ${event.error}`));
+    utterance.onerror = (event) => {
+      // "interrupted" et "canceled" sont déclenchés par speechSynthesis.cancel() — comportement intentionnel
+      if (event.error === "interrupted" || event.error === "canceled") {
+        resolve();
+      } else {
+        reject(new Error(`TTS error: ${event.error}`));
+      }
+    };
     window.speechSynthesis.speak(utterance);
   });
 }

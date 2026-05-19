@@ -5,6 +5,18 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-05-20
+
+### Modifié
+
+- `resolvePoiName` dans `overpass.ts` — branches dérivées (`historic`, `tourism`, `natural`) supprimées : un POI n'est désormais retenu que s'il possède un tag `name`/`name:fr` explicite ou une `inscription` gravée ; les viewpoints, peaks, ruines sans nom propre sont silencieusement écartés
+- `GENERIC_NAMES` dans `overpass.ts` — nettoyé : ne contient plus que les noms d'infrastructure routière générique (`tunnel`, `rue`, `carrefour`…) ; les types OSM naturels retirés (devenus inutiles sans branche `natural`)
+- `capitalize` dans `overpass.ts` — fonction supprimée (plus aucun usage après la simplification de `resolvePoiName`)
+- `useRoadStories.ts` — la recherche Wikipedia est sautée quand le nom du POI provient d'une `inscription` (évite un 404 systématique en console avec le texte latin comme titre)
+- `buildUserPrompt` dans `gemini.ts` — prompt dédié quand le nom est une inscription gravée : Gemini est invité à traduire et expliquer l'inscription plutôt qu'à décrire un lieu, empêchant les inventions sur des monuments connus
+
+---
+
 ## [0.4.1] - 2026-05-19
 
 ### Corrigé

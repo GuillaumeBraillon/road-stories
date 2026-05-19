@@ -59,50 +59,23 @@ async function fetchOverpass(url: string, body: string): Promise<OverpassRespons
   }
 }
 
-/** Noms trop génériques pour identifier un site culturel (infrastructure routière ou type OSM non spécifique) */
-const GENERIC_NAMES = new Set([
-  "tunnel",
-  "route",
-  "chemin",
-  "rue",
-  "avenue",
-  "passage",
-  "carrefour",
-  "échangeur",
-  "bretelle",
-  "virage",
-  "col",
-  "ruins",
-  "building",
-]);
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, " ");
-}
+/** Noms explicites trop génériques pour être utiles (infrastructure routière OSM sans identité culturelle) */
+const GENERIC_NAMES = new Set(["tunnel", "route", "chemin", "rue", "avenue", "passage", "carrefour", "échangeur", "bretelle", "virage", "col"]);
 
 /**
- * Résout le nom d'affichage d'un nœud OSM par ordre de priorité :
- * 1. `name:fr` / `name` explicite — sauf si générique (infrastructure routière)
+ * Résout le nom d'affichage d'un nœud OSM :
+ * 1. `name:fr` / `name` explicite — sauf si infrastructure routière générique
  * 2. `inscription` (texte gravé sur le monument)
- * 3. Valeur de `historic` — sauf si générique (ex : «ruins», «building»)
- * 4. Valeur de `tourism` — sauf «yes» et «iformation» (trop vague)
- * 5. Valeur de `natural`
- * Retourne `null` si aucun nom significatif n'est dérivable.
+ * Les valeurs dérivées de tags de type (`historic`, `tourism`, `natural`)
+ * sont intentionnellement exclues : sans nom propre, elles ne permettent pas
+ * de générer un message culturellement utile.
+ * Retourne `null` si aucun nom significatif n'est identifiable.
  */
 function resolvePoiName(tags: Record<string, string>): string | null {
   const explicit = tags["name:fr"] ?? tags["name"];
   if (explicit) return GENERIC_NAMES.has(explicit.trim().toLowerCase()) ? null : explicit;
 
   if (tags["inscription"]) return tags["inscription"];
-
-  const historic = tags["historic"];
-  if (historic && historic !== "yes" && !GENERIC_NAMES.has(historic)) return capitalize(historic);
-
-  const tourism = tags["tourism"];
-  if (tourism && tourism !== "yes" && tourism !== "information") return capitalize(tourism);
-
-  const natural = tags["natural"];
-  if (natural) return capitalize(natural);
 
   return null;
 }

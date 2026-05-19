@@ -70,6 +70,15 @@ function buildUserPrompt(poiName: string, coords: { lat: number; lng: number }, 
     .map(([k, v]) => `${k}=${v}`)
     .join(", ");
 
+  // Nom dérivé d'une inscription gravée : demander une traduction/explication plutôt qu'une description de lieu
+  if (poiTags["inscription"] === poiName) {
+    return `Un monument se trouve à proximité — coordonnées GPS : ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}
+Tags OSM : ${relevantTags || "aucun"}
+Ce monument porte l'inscription gravée : "${poiName}"
+Traduis et explique cette inscription en 2-3 phrases orales naturelles. Ne nomme pas le monument — concentre-toi sur ce que signifie l'inscription.
+Génère le message.`;
+  }
+
   return `Lieu : ${poiName}
 Coordonnées GPS : ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}
 Tags OSM : ${relevantTags || "aucun"}

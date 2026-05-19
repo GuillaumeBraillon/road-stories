@@ -22,4 +22,4 @@ export type ThemeGroup = {
   subThemes: Theme[];
 };
 
-export type AppStatus = "idle" | "active" | "speaking";
+export type AppStatus = "idle" | "listening" | "searching" | "no-poi" | "wikipedia" | "generating" | "speaking";

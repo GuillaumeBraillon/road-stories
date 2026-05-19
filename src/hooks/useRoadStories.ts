@@ -5,7 +5,7 @@ import { getNearbyPOIs } from "../services/overpass";
 import { calculateDistance } from "../services/geolocation";
 import { getWikipediaSummary } from "../services/wikipedia";
 import { generateRoadMessage } from "../services/gemini";
-import { speak } from "../services/tts";
+import { speak, stop } from "../services/tts";
 import { logger } from "../services/logger";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -19,11 +19,11 @@ export function useRoadStories(themes: Theme[]): {
   currentPOIName: string | null;
 } {
   const [isActive, setIsActive] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [activeStatus, setActiveStatus] = useState<Exclude<AppStatus, "idle">>("listening");
   const [currentPOIName, setCurrentPOIName] = useState<string | null>(null);
 
-  // status dérivé du render — aucun setState synchrone dans les effets
-  const status: AppStatus = !isActive ? "idle" : isSpeaking ? "speaking" : "active";
+  // "idle" est dérivé de isActive — les autres états sont pilotés par setActiveStatus dans le tick
+  const status: AppStatus = isActive ? activeStatus : "idle";
 
   const { coords } = useGeolocation();
 
@@ -76,6 +76,7 @@ export function useRoadStories(themes: Theme[]): {
         let pois: POI[];
         if (hasMoved || themesChanged) {
           logger.debug("tick", "Interrogation Overpass...");
+          setActiveStatus("searching");
           pois = await getNearbyPOIs(currentCoords, themesRef.current, DETECTION_RADIUS_M);
           overpassCache.current = { coords: currentCoords, themesKey, pois };
           logger.debug(
@@ -95,15 +96,21 @@ export function useRoadStories(themes: Theme[]): {
         const newPOI = pois.find((poi) => !triggeredPOIs.current.has(poi.id));
         logger.debug("tick", "Nouveau POI :", newPOI?.name ?? "aucun");
 
-        if (!newPOI) return;
+        if (!newPOI) {
+          setActiveStatus("no-poi");
+          return;
+        }
 
         const enabledThemes = themesRef.current.filter((t) => t.enabled).map((t) => t.label);
 
-        // Wikipedia — résolu avant de déclencher l'état "speaking" pour éviter un flash d'UI inutile
+        // Wikipedia — résolu avant de déclencher l'état "generating" pour éviter un flash d'UI inutile
+        // Pas de recherche Wikipedia si le nom est une inscription gravée (le titre serait le texte latin)
+        const isInscriptionName = !newPOI.tags["wikipedia"] && newPOI.tags["inscription"] === newPOI.name;
+        setActiveStatus("wikipedia");
         logger.debug("tick", "Wikipedia...");
         const wikiTag = newPOI.tags["wikipedia"];
         const wikiTitle = wikiTag ? wikiTag.replace(/^\w{2}:/, "") : newPOI.name;
-        const wikipediaSummary = await getWikipediaSummary(wikiTitle);
+        const wikipediaSummary = isInscriptionName ? null : await getWikipediaSummary(wikiTitle);
 
         // Panneau indicateur sans fiche Wikipedia : contexte insuffisant pour un message fiable
         if (wikipediaSummary === null && newPOI.tags["information"] === "guidepost") {
@@ -112,10 +119,10 @@ export function useRoadStories(themes: Theme[]): {
           return;
         }
 
-        // À partir d'ici on génère et lit un message — activer l'état "speaking"
+        // À partir d'ici on génère et lit un message — verrouiller le mutex
         // Le POI n'est marqué comme traité qu'après la génération, pour permettre un retry si Gemini échoue.
         isSpeakingRef.current = true;
-        setIsSpeaking(true);
+        setActiveStatus("generating");
         didStartSpeaking = true;
         setCurrentPOIName(newPOI.name);
 
@@ -130,6 +137,7 @@ export function useRoadStories(themes: Theme[]): {
         logger.debug("tick", "Message :", message);
 
         triggeredPOIs.current.add(newPOI.id);
+        setActiveStatus("speaking");
         await speak(message);
       } catch (error) {
         logger.error("Road Stories error:", error);
@@ -137,7 +145,7 @@ export function useRoadStories(themes: Theme[]): {
         isTickRunning.current = false;
         if (didStartSpeaking) {
           isSpeakingRef.current = false;
-          setIsSpeaking(false);
+          setActiveStatus("listening");
           setCurrentPOIName(null);
         }
       }
@@ -149,6 +157,7 @@ export function useRoadStories(themes: Theme[]): {
 
     return () => {
       clearInterval(intervalId);
+      stop();
       wakeLock?.release().catch(() => {});
     };
   }, [isActive]);

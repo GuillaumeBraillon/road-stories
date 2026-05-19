@@ -9,12 +9,13 @@ export async function getWikipediaSummary(title: string): Promise<string | null>
     const response = await fetch(`${WIKIPEDIA_URL}/${encodeURIComponent(title)}`, { signal: controller.signal });
 
     if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`Wikipedia API error: ${response.status}`);
 
-    if (!response.ok) {
-      throw new Error(`Wikipedia API error: ${response.status}`);
-    }
-
-    const data: { extract?: string; type?: string; coordinates?: unknown } = await response.json();
+    const data: { extract?: string; type?: string; coordinates?: unknown } = (await response.json()) as {
+      extract?: string;
+      type?: string;
+      coordinates?: unknown;
+    };
 
     // Pages de désambiguïsation : pas de contenu utile
     if (data.type === "disambiguation") return null;
@@ -26,7 +27,7 @@ export async function getWikipediaSummary(title: string): Promise<string | null>
     return data.extract ?? null;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return null;
-    if (error instanceof TypeError) return null; // erreur réseau
+    if (error instanceof TypeError) return null;
     throw error;
   } finally {
     clearTimeout(timeoutId);
