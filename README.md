@@ -1,73 +1,85 @@
-# React + TypeScript + Vite
+# Road Stories 🚗
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+PWA mobile qui enrichit vos trajets en voiture en diffusant automatiquement des anecdotes et informations culturelles sur les lieux traversés, grâce à un agent IA propulsé par Gemini 2.5 Flash.
 
-Currently, two official plugins are available:
+> Comme un GPS, mais pour la culture.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## Fonctionnement
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. Appuyez sur **ON** avant de partir
+2. L'app détecte les points d'intérêt à proximité via le GPS
+3. La musique se met en pause automatiquement
+4. Un message audio généré par IA est lu (~30 secondes)
+5. La musique reprend
 
-## Expanding the ESLint configuration
+Aucune interaction nécessaire pendant le trajet.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+---
 
-```js
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
+## Stack technique
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- **React 18** + **TypeScript**
+- **Tailwind CSS v4** + **Vite**
+- **Gemini 2.5 Flash** (`@google/genai`) — agent IA
+- **OpenStreetMap** / Overpass API — points d'intérêt
+- **Wikipedia REST API** — contenu encyclopédique
+- **Web Speech API** — synthèse vocale
+- **Geolocation API** + **Wake Lock API**
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+---
+
+## Prérequis
+
+- Node.js 20+
+- Une clé API Google AI Studio (free tier) : [aistudio.google.com](https://aistudio.google.com)
+
+---
+
+## Installation
+
+```bash
+git clone https://github.com/ton-username/road-stories
+cd road-stories
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Créer un fichier `.env.local` à la racine :
 
-```js
-// eslint.config.js
-import reactX from "eslint-plugin-react-x";
-import reactDom from "eslint-plugin-react-dom";
-
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs["recommended-typescript"],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
 ```
+VITE_GEMINI_API_KEY=ta_clé_ici
+```
+
+Lancer en développement :
+
+```bash
+npm run dev
+```
+
+---
+
+## Thèmes disponibles
+
+L'utilisateur choisit les thèmes qui l'intéressent :
+
+- 🏛️ Monuments historiques
+- 🏙️ Histoire des villes
+- 🌿 Curiosités naturelles
+- 💡 Anecdotes insolites
+- 🍽️ Gastronomie locale
+- 👤 Personnages célèbres
+
+---
+
+## Limites connues
+
+- Couverture OSM variable selon les régions
+- Voix synthétique dépendante du navigateur (Web Speech API)
+- Mode arrière-plan limité sur iOS (contrainte PWA Safari)
+
+---
+
+## Licence
+
+MIT
