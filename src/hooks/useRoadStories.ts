@@ -17,10 +17,17 @@ export function useRoadStories(themes: Theme[]): {
   setIsActive: (value: boolean) => void;
   status: AppStatus;
   currentPOIName: string | null;
+  currentMessage: string | null;
+  currentMessageSource: "gemini" | "wiki+gemini" | null;
+  isMuted: boolean;
+  setIsMuted: (value: boolean) => void;
 } {
   const [isActive, setIsActive] = useState(false);
   const [activeStatus, setActiveStatus] = useState<Exclude<AppStatus, "idle">>("listening");
   const [currentPOIName, setCurrentPOIName] = useState<string | null>(null);
+  const [currentMessage, setCurrentMessage] = useState<string | null>(null);
+  const [currentMessageSource, setCurrentMessageSource] = useState<"gemini" | "wiki+gemini" | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
 
   // "idle" est dérivé de isActive — les autres états sont pilotés par setActiveStatus dans le tick
   const status: AppStatus = isActive ? activeStatus : "idle";
@@ -34,6 +41,7 @@ export function useRoadStories(themes: Theme[]): {
   const themesRef = useRef<Theme[]>(themes);
   const triggeredPOIs = useRef(new Set<string>());
   const overpassCache = useRef<{ coords: Coords; themesKey: string; pois: POI[] } | null>(null);
+  const isMutedRef = useRef(false);
 
   useEffect(() => {
     coordsRef.current = coords;
@@ -41,6 +49,10 @@ export function useRoadStories(themes: Theme[]): {
   useEffect(() => {
     themesRef.current = themes;
   }, [themes]);
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+    if (isMuted) stop();
+  }, [isMuted]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -93,7 +105,34 @@ export function useRoadStories(themes: Theme[]): {
           );
         }
 
-        const newPOI = pois.find((poi) => !triggeredPOIs.current.has(poi.id));
+        // Tags qui apportent du contenu réel au-delà de la simple classification OSM.
+        // Pré-filtrage synchrone : on saute immédiatement les POIs sans contenu exploitable
+        // plutôt qu'attendre le prochain tick de 30 secondes.
+        const ENRICHING_TAGS = [
+          "description",
+          "inscription",
+          "start_date",
+          "end_date",
+          "heritage",
+          "castle_type",
+          "site_type",
+          "denomination",
+          "religion",
+          "ele",
+          "height",
+          "wikidata",
+        ];
+        let newPOI: POI | undefined;
+        for (const poi of pois) {
+          if (triggeredPOIs.current.has(poi.id)) continue;
+          if (!ENRICHING_TAGS.some((key) => poi.tags[key])) {
+            logger.debug("tick", "POI ignoré (contexte insuffisant) :", poi.name);
+            triggeredPOIs.current.add(poi.id);
+            continue;
+          }
+          newPOI = poi;
+          break;
+        }
         logger.debug("tick", "Nouveau POI :", newPOI?.name ?? "aucun");
 
         if (!newPOI) {
@@ -119,9 +158,10 @@ export function useRoadStories(themes: Theme[]): {
           return;
         }
 
-        // À partir d'ici on génère et lit un message — verrouiller le mutex
+        // À partir d'ici on génère et lit un message.
+        // En mode muet, le mutex n'est pas verrouillé — le tick suivant peut s'enchaîner normalement.
         // Le POI n'est marqué comme traité qu'après la génération, pour permettre un retry si Gemini échoue.
-        isSpeakingRef.current = true;
+        isSpeakingRef.current = !isMutedRef.current;
         setActiveStatus("generating");
         didStartSpeaking = true;
         setCurrentPOIName(newPOI.name);
@@ -137,8 +177,12 @@ export function useRoadStories(themes: Theme[]): {
         logger.debug("tick", "Message :", message);
 
         triggeredPOIs.current.add(newPOI.id);
+        setCurrentMessage(message);
+        setCurrentMessageSource(wikipediaSummary ? "wiki+gemini" : "gemini");
         setActiveStatus("speaking");
-        await speak(message);
+        if (!isMutedRef.current) {
+          await speak(message);
+        }
       } catch (error) {
         logger.error("Road Stories error:", error);
       } finally {
@@ -147,6 +191,11 @@ export function useRoadStories(themes: Theme[]): {
           isSpeakingRef.current = false;
           setActiveStatus("listening");
           setCurrentPOIName(null);
+          // En mode muet : conserver le message affiché jusqu'au prochain POI
+          if (!isMutedRef.current) {
+            setCurrentMessage(null);
+            setCurrentMessageSource(null);
+          }
         }
       }
     };
@@ -158,9 +207,11 @@ export function useRoadStories(themes: Theme[]): {
     return () => {
       clearInterval(intervalId);
       stop();
+      setCurrentMessage(null);
+      setCurrentMessageSource(null);
       wakeLock?.release().catch(() => {});
     };
   }, [isActive]);
 
-  return { isActive, setIsActive, status, currentPOIName };
+  return { isActive, setIsActive, status, currentPOIName, currentMessage, currentMessageSource, isMuted, setIsMuted };
 }

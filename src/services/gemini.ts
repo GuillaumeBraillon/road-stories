@@ -60,6 +60,7 @@ const CULTURAL_TAG_PREFIXES = [
   "description",
   "inscription",
   "information",
+  "operator",
   "ele",
   "height",
 ];

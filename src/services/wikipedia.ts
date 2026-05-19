@@ -6,7 +6,10 @@ export async function getWikipediaSummary(title: string): Promise<string | null>
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${WIKIPEDIA_URL}/${encodeURIComponent(title)}`, { signal: controller.signal });
+    // Wikipedia accepte les titres tout en minuscules et gère les redirections vers la casse canonique.
+    // Les espaces sont remplacés par des underscores (convention de l'API REST).
+    const normalized = title.toLowerCase().replace(/ /g, "_");
+    const response = await fetch(`${WIKIPEDIA_URL}/${encodeURIComponent(normalized)}`, { signal: controller.signal });
 
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`Wikipedia API error: ${response.status}`);

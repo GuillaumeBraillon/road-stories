@@ -5,6 +5,32 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-20
+
+### Ajouté
+
+- Mode muet — bouton 🔇/🔊 dans l'en-tête ; Gemini génère le message mais la TTS est sautée ; le message reste affiché jusqu'au prochain POI ; activer le mute pendant la lecture stoppe immédiatement la voix
+- Affichage du texte généré — bloc dédié sous l'indicateur de statut, visible pendant la lecture (mode normal) et persistant jusqu'au POI suivant (mode muet) ; le nom du POI apparaît en en-tête du bloc
+- Badges de source — `Wikipedia` et/ou `Gemini` en bas du bloc message selon l'origine du contenu
+- `currentMessage` et `currentMessageSource` dans `useRoadStories.ts` — états dédiés pour le texte généré et sa source (`"gemini"` | `"wiki+gemini"`)
+- `operator` comme nom de fallback dans `resolvePoiName` (`overpass.ts`) — les nœuds sans `name` mais avec un `operator` (ex : "Parc Naturel Régional du Vercors") utilisent l'opérateur comme identifiant pour la recherche Wikipedia
+- `"operator"` ajouté dans `CULTURAL_TAG_PREFIXES` (`gemini.ts`) — transmis à Gemini pour contextualiser la génération
+
+### Modifié
+
+- Pré-filtrage synchrone des POIs dans `useRoadStories.ts` — les POIs sans tags enrichissants (`ENRICHING_TAGS`) sont sautés immédiatement dans une boucle plutôt qu'en retournant et attendant le prochain tick de 30 secondes ; le check post-Wikipedia est simplifié au seul cas guidepost
+- Normalisation des titres Wikipedia dans `wikipedia.ts` — conversion tout en minuscules + espaces → underscores avant l'appel REST ; Wikipedia gère les redirections vers la casse canonique
+- `buildUserPrompt` dans `gemini.ts` — prompt dédié quand le nom du POI est une inscription gravée : Gemini est invité à traduire et expliquer l'inscription plutôt qu'à décrire un lieu
+- `useRoadStories.ts` — la recherche Wikipedia est sautée quand le nom vient d'une `inscription` ; mutex TTS non verrouillé en mode muet
+
+### Corrigé
+
+- Délai de 30 secondes après filtrage d'un POI sans contexte — remplacé par une boucle synchrone passant directement au POI suivant
+- Titres Wikipedia avec espaces ou casse mixte retournant 404 — corrigé par normalisation lowercase + underscores
+- Gemini inventait des informations sur des lieux connus à partir d'une inscription latine — prompt dédié résolvant le problème
+
+---
+
 ## [0.4.2] - 2026-05-20
 
 ### Modifié

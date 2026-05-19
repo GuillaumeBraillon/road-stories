@@ -163,7 +163,9 @@ function flattenThemes(groups: ThemeGroup[]): Theme[] {
 function App() {
   const [themeGroups, setThemeGroups] = useState<ThemeGroup[]>(DEFAULT_THEME_GROUPS);
 
-  const { isActive, setIsActive, status, currentPOIName } = useRoadStories(flattenThemes(themeGroups));
+  const { isActive, setIsActive, status, currentPOIName, currentMessage, currentMessageSource, isMuted, setIsMuted } = useRoadStories(
+    flattenThemes(themeGroups)
+  );
 
   function handleThemeToggle(themeId: string) {
     setThemeGroups((prev) =>
@@ -186,9 +188,29 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center px-6 py-10 gap-8">
-      <h1 className="text-3xl font-bold tracking-tight">Road Stories</h1>
+      <div className="w-full max-w-sm flex items-center justify-between">
+        <h1 className="text-3xl font-bold tracking-tight">Road Stories</h1>
+        <button
+          onClick={() => setIsMuted(!isMuted)}
+          className="text-2xl p-2 rounded-full hover:bg-gray-800 transition-colors"
+          aria-label={isMuted ? "Activer le son" : "Couper le son"}
+        >
+          {isMuted ? "🔇" : "🔊"}
+        </button>
+      </div>
 
       <StatusIndicator status={status} currentPOIName={currentPOIName} />
+
+      {currentMessage && (
+        <div className="w-full max-w-sm bg-gray-800 rounded-xl p-4 flex flex-col gap-2">
+          {currentPOIName && <p className="text-gray-400 text-xs font-medium uppercase tracking-wide">{currentPOIName}</p>}
+          <p className="text-white text-sm leading-relaxed">{currentMessage}</p>
+          <div className="flex items-center gap-1.5 self-end">
+            {currentMessageSource === "wiki+gemini" && <span className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">Wikipedia</span>}
+            <span className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">Gemini</span>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 flex items-center justify-center">
         <ToggleButton isActive={isActive} onToggle={() => setIsActive(!isActive)} disabled={false} />

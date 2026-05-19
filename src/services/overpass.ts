@@ -77,6 +77,8 @@ function resolvePoiName(tags: Record<string, string>): string | null {
 
   if (tags["inscription"]) return tags["inscription"];
 
+  if (tags["operator"]) return tags["operator"];
+
   return null;
 }
 
