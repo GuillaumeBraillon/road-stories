@@ -2,9 +2,9 @@ import type { Coords, POI, Theme } from "../types";
 import { logger } from "./logger";
 
 const OVERPASS_ENDPOINTS = [
-  "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass.private.coffee/api/interpreter",
+  "https://overpass-api.de/api/interpreter",
 ];
 
 const REQUEST_TIMEOUT_MS = 10_000;
