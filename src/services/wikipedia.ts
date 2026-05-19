@@ -14,7 +14,15 @@ export async function getWikipediaSummary(title: string): Promise<string | null>
       throw new Error(`Wikipedia API error: ${response.status}`);
     }
 
-    const data: { extract?: string } = await response.json();
+    const data: { extract?: string; type?: string; coordinates?: unknown } = await response.json();
+
+    // Pages de désambiguïsation : pas de contenu utile
+    if (data.type === "disambiguation") return null;
+
+    // Article sans coordonnées géographiques → probablement un livre, film ou concept abstrait,
+    // pas un lieu physique → on rejette pour éviter les faux matchs (ex: "Le Tramway" → roman)
+    if (!data.coordinates) return null;
+
     return data.extract ?? null;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return null;

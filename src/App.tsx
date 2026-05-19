@@ -6,12 +6,45 @@ import { StatusIndicator } from "./components/StatusIndicator";
 import { ThemeSelector } from "./components/ThemeSelector";
 
 const DEFAULT_THEMES: Theme[] = [
-  { id: "monuments-historiques", label: "Monuments historiques", enabled: true },
-  { id: "histoire-villes", label: "Histoire des villes", enabled: true },
-  { id: "curiosites-naturelles", label: "Curiosités naturelles", enabled: true },
-  { id: "anecdotes", label: "Anecdotes insolites", enabled: true },
-  { id: "gastronomie", label: "Gastronomie locale", enabled: true },
-  { id: "personnages", label: "Personnages célèbres", enabled: true },
+  {
+    id: "patrimoine",
+    label: "Patrimoine & histoire",
+    enabled: true,
+    osmFilters: ['"historic"', '"waterway"', '"geological"="volcanic_caldera_rim"', '"geological"="palaeontological_site"', '"geological"="meteor_crater"'],
+  },
+  {
+    id: "tourisme",
+    label: "Attractions touristiques",
+    enabled: true,
+    osmFilters: [
+      '"tourism"="attraction"',
+      '"tourism"="museum"',
+      '"tourism"="artwork"',
+      '"tourism"="information"',
+      '"tourism"="aquarium"',
+      '"tourism"="theme_park"',
+      '"tourism"="viewpoint"',
+      '"tourism"="zoo"',
+      '"tourism"="yes"',
+      '"amenity"="arts_centre"',
+      '"amenity"="planetarium"',
+      '"amenity"="bbq"',
+      '"boundary"="historic"',
+      '"boundary"="national_park"',
+    ],
+  },
+  {
+    id: "nature",
+    label: "Nature & paysages",
+    enabled: true,
+    osmFilters: ['"natural"="peak"', '"natural"="waterfall"', '"natural"="cave_entrance"', '"water"'],
+  },
+  {
+    id: "religion",
+    label: "Lieux de culte",
+    enabled: false,
+    osmFilters: ['"amenity"="place_of_worship"'],
+  },
 ];
 
 function App() {

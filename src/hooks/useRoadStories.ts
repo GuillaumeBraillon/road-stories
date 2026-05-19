@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import type { AppStatus, Coords, Theme } from "../types";
+import type { AppStatus, Coords, POI, Theme } from "../types";
 import { useGeolocation } from "./useGeolocation";
 import { getNearbyPOIs } from "../services/overpass";
+import { calculateDistance } from "../services/geolocation";
 import { getWikipediaSummary } from "../services/wikipedia";
 import { generateRoadMessage } from "../services/gemini";
 import { speak } from "../services/tts";
@@ -9,6 +10,7 @@ import { logger } from "../services/logger";
 
 const POLL_INTERVAL_MS = 30_000;
 const DETECTION_RADIUS_M = 500;
+const OVERPASS_MOVE_THRESHOLD_M = 100;
 
 export function useRoadStories(themes: Theme[]): {
   isActive: boolean;
@@ -27,9 +29,11 @@ export function useRoadStories(themes: Theme[]): {
 
   // Refs pour éviter les stale closures dans l'interval
   const isSpeakingRef = useRef(false);
+  const isTickRunning = useRef(false);
   const coordsRef = useRef<Coords | null>(null);
   const themesRef = useRef<Theme[]>(themes);
   const triggeredPOIs = useRef(new Set<string>());
+  const overpassCache = useRef<{ coords: Coords; themesKey: string; pois: POI[] } | null>(null);
 
   useEffect(() => {
     coordsRef.current = coords;
@@ -51,17 +55,50 @@ export function useRoadStories(themes: Theme[]): {
       .catch(() => {});
 
     const tick = async () => {
-      if (!coordsRef.current || isSpeakingRef.current) return;
+      if (isTickRunning.current) return;
+      isTickRunning.current = true;
 
       let didStartSpeaking = false;
 
       try {
-        const pois = await getNearbyPOIs(coordsRef.current, DETECTION_RADIUS_M);
+        logger.debug("tick", "coords:", coordsRef.current, "speaking:", isSpeakingRef.current);
+        if (!coordsRef.current || isSpeakingRef.current) return;
+
+        const currentCoords = coordsRef.current;
+        const themesKey = themesRef.current
+          .filter((t) => t.enabled)
+          .map((t) => t.id)
+          .join(",");
+        const cache = overpassCache.current;
+        const hasMoved = !cache || calculateDistance(currentCoords, cache.coords) > OVERPASS_MOVE_THRESHOLD_M;
+        const themesChanged = !cache || cache.themesKey !== themesKey;
+
+        let pois: POI[];
+        if (hasMoved || themesChanged) {
+          logger.debug("tick", "Interrogation Overpass...");
+          pois = await getNearbyPOIs(currentCoords, themesRef.current, DETECTION_RADIUS_M);
+          overpassCache.current = { coords: currentCoords, themesKey, pois };
+          logger.debug(
+            "tick",
+            `${pois.length} POI(s) trouvés`,
+            pois.map((p) => p.name)
+          );
+        } else {
+          pois = cache.pois;
+          logger.debug(
+            "tick",
+            `${pois.length} POI(s) en cache`,
+            pois.map((p) => p.name)
+          );
+        }
+
         const newPOI = pois.find((poi) => !triggeredPOIs.current.has(poi.id));
+        logger.debug("tick", "Nouveau POI :", newPOI?.name ?? "aucun");
 
         if (!newPOI) return;
 
-        triggeredPOIs.current.add(newPOI.id);
+        // Le POI n'est marqué comme traité qu'après la génération du message.
+        // Ainsi, si Wikipedia ou Gemini échoue, le prochain tick peut réessayer.
         isSpeakingRef.current = true;
         setIsSpeaking(true);
         didStartSpeaking = true;
@@ -69,17 +106,26 @@ export function useRoadStories(themes: Theme[]): {
 
         const enabledThemes = themesRef.current.filter((t) => t.enabled).map((t) => t.label);
 
-        const wikipediaSummary = await getWikipediaSummary(newPOI.name);
+        logger.debug("tick", "Wikipedia...");
+        const wikiTag = newPOI.tags["wikipedia"];
+        const wikiTitle = wikiTag ? wikiTag.replace(/^\w{2}:/, "") : newPOI.name;
+        const wikipediaSummary = await getWikipediaSummary(wikiTitle);
+        logger.debug("tick", "Gemini...");
         const message = await generateRoadMessage({
           poiName: newPOI.name,
+          coords: { lat: newPOI.lat, lng: newPOI.lng },
+          poiTags: newPOI.tags,
           wikipediaSummary,
           enabledThemes,
         });
+        logger.debug("tick", "Message :", message);
 
+        triggeredPOIs.current.add(newPOI.id);
         await speak(message);
       } catch (error) {
         logger.error("Road Stories error:", error);
       } finally {
+        isTickRunning.current = false;
         if (didStartSpeaking) {
           isSpeakingRef.current = false;
           setIsSpeaking(false);
@@ -88,6 +134,8 @@ export function useRoadStories(themes: Theme[]): {
       }
     };
 
+    // Premier tick immédiat, puis toutes les 30 secondes
+    void tick();
     const intervalId = setInterval(tick, POLL_INTERVAL_MS);
 
     return () => {

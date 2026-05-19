@@ -5,6 +5,25 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-19
+
+### Ajouté
+
+- `Theme.osmFilters` — chaque thème porte ses propres filtres OSM (`string[]`) utilisés dans la requête Overpass
+- `DEFAULT_THEMES` redessinés avec 4 thèmes OSM : Patrimoine & histoire (`historic`), Attractions touristiques (`tourism=attraction/museum/artwork/information`), Nature & paysages (`natural=peak/waterfall/cave_entrance`), Lieux de culte (`amenity=place_of_worship`)
+- Cache Overpass dans `useRoadStories` : Overpass n'est interrogé que si le déplacement dépasse 100 m ou si les thèmes ont changé
+- Tags OSM dans le prompt Gemini : les tags culturellement pertinents du POI (`historic`, `tourism`, `start_date`, `heritage`, `description`, `ele`…) sont transmis à Gemini pour ancrer la génération
+- Résolution Wikipedia via le tag OSM `wikipedia` : si le nœud OSM porte un tag `wikipedia=fr:…`, ce titre est utilisé directement pour la recherche Wikipedia
+
+### Modifié
+
+- `buildQuery` dans `overpass.ts` — génération dynamique des nœuds Overpass à partir des `osmFilters` des thèmes actifs ; retourne `[]` immédiatement si aucun thème n'est activé
+- `getNearbyPOIs` — nouvelle signature : `(coords, themes, radiusMeters?)` remplace le filtre OSM codé en dur
+- `generateRoadMessage` — `GenerateMessageParams` étendu avec `coords` et `poiTags` ; `buildUserPrompt` inclut les coordonnées GPS et les tags OSM filtrés
+- Prompt système Gemini renforcé : instruction explicite de ne pas inventer de détails géographiques ou historiques si les informations disponibles ne permettent pas d'identifier le lieu avec certitude
+
+---
+
 ## [0.2.0] - 2026-05-19
 
 ### Ajouté
