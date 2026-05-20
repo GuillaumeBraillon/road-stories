@@ -244,7 +244,7 @@ function App() {
         </div>
       </div>
 
-      <StatusIndicator status={status} currentPOIName={currentPOIName} />
+      <StatusIndicator status={status} currentPOIName={currentPOIName} detectionRadiusM={settings.detectionRadiusM} />
 
       {currentMessage && (
         <div className="w-full max-w-sm bg-gray-800 rounded-xl p-4 flex flex-col gap-2">

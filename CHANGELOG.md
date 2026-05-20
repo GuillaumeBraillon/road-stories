@@ -5,6 +5,20 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - 2026-05-20
+
+### Ajouté
+
+- `StatusIndicator` — labels enrichis avec icônes et textes plus descriptifs pour chaque état (`listening`, `searching`, `wikipedia`, `generating`, `speaking`, `no-poi`)
+- `StatusIndicator` — le nom du POI est maintenant affiché dès l'état `wikipedia` (auparavant seulement à partir de `generating`)
+- `StatusIndicator` — le rayon de détection dans le message "aucun point d'intérêt" reflète désormais la valeur configurée dans les réglages (prop `detectionRadiusM`)
+
+### Corrigé
+
+- `useRoadStories` — un changement de réglages (rayon, intervalle, seuil) relance immédiatement une recherche sans attendre le prochain tick
+
+---
+
 ## [0.9.3] - 2026-05-20
 
 ### Corrigé

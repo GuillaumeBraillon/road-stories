@@ -147,6 +147,7 @@ export function useRoadStories(
         // Wikipedia — résolu avant de déclencher l'état "generating" pour éviter un flash d'UI inutile
         // Pas de recherche Wikipedia si le nom est une inscription gravée (le titre serait le texte latin)
         const isInscriptionName = !newPOI.tags["wikipedia"] && newPOI.tags["inscription"] === newPOI.name;
+        setCurrentPOIName(newPOI.name);
         setActiveStatus("wikipedia");
         logger.debug("tick", "Wikipedia...");
         const wikiTag = newPOI.tags["wikipedia"];
@@ -217,7 +218,7 @@ export function useRoadStories(
       setCurrentMessageSource(null);
       wakeLock?.release().catch(() => {});
     };
-  }, [isActive, settings.pollIntervalMs]);
+  }, [isActive, settings]);
 
   function deleteHistoryEntry(index: number) {
     setHistory((prev) => {
