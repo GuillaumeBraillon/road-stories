@@ -5,6 +5,14 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-05-20
+
+### Corrigé
+
+- Icône PWA — `icon_v2.svg` converti en `icon-192.png` et `icon-512.png` ; le manifest référence désormais des PNG (Chrome ne supporte pas les SVG pour les apps installées)
+
+---
+
 ## [0.7.0] - 2026-05-20
 
 ### Ajouté
