@@ -5,6 +5,18 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-05-20
+
+### Ajouté
+
+- `api/overpass.ts` — Vercel Edge Function proxy pour les requêtes Overpass API ; résout les erreurs CORS bloquantes en production (le fetch est désormais serveur→serveur)
+
+### Modifié
+
+- `overpass.ts` — `/api/overpass` ajouté en premier endpoint de la liste de fallback ; les endpoints directs restent actifs pour le dev local (fallback automatique si 404)
+
+---
+
 ## [0.8.1] - 2026-05-20
 
 ### Ajouté

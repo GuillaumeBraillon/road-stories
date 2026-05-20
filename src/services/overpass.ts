@@ -2,6 +2,7 @@ import type { Coords, POI, Theme } from "../types";
 import { logger } from "./logger";
 
 const OVERPASS_ENDPOINTS = [
+  "/api/overpass", // Vercel Edge proxy (évite les erreurs CORS en production)
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass.private.coffee/api/interpreter",
   "https://overpass-api.de/api/interpreter",
