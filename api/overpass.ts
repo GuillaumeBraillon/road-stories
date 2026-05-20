@@ -1,25 +1,50 @@
 /**
  * Proxy Vercel Edge Function — Overpass API
  *
- * Résout les erreurs CORS : le fetch vers overpass-api.de s'effectue
- * côté serveur (serveur→serveur), sans restriction d'origine.
- * Accepte le même format que l'API Overpass directe (POST form-encoded).
+ * Résout les erreurs CORS : le fetch vers Overpass s'effectue côté serveur.
+ * Utilise Promise.any() pour lancer toutes les requêtes en parallèle et
+ * retourner la première réponse valide (plus rapide et plus résilient).
  */
 
 export const config = { runtime: "edge" };
 
 const UPSTREAM_ENDPOINTS = [
+  "https://overpass.karte.io/api/interpreter",
+  "https://overpass.openstreetmap.fr/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass.private.coffee/api/interpreter",
+  "https://lz4.overpass-api.de/api/interpreter",
   "https://overpass-api.de/api/interpreter",
 ];
 
-const PER_ENDPOINT_TIMEOUT_MS = 9_000;
+const TIMEOUT_MS = 12_000;
 
-// AbortSignal.timeout() n'est pas fiable dans le Vercel Edge Runtime.
-// On utilise Promise.race() avec un timeout manuel pour garantir le comportement.
-function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  return Promise.race([fetch(url, init), new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs))]);
+async function tryEndpoint(url: string, body: string): Promise<string> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "RoadStories/1.0 (https://github.com/GuillaumeBraillon/road-stories)",
+      },
+      body,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const text = await response.text();
+
+    // Certains endpoints renvoient une page HTML 200 en cas de rate-limit
+    if (!text.trimStart().startsWith("{")) throw new Error("Response is not JSON");
+
+    return text;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export default async function handler(request: Request): Promise<Response> {
@@ -28,33 +53,18 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   const body = await request.text();
-  let lastError = "unknown";
 
-  for (const url of UPSTREAM_ENDPOINTS) {
-    try {
-      const upstream = await fetchWithTimeout(
-        url,
-        { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body },
-        PER_ENDPOINT_TIMEOUT_MS
-      );
-
-      if (!upstream.ok) {
-        lastError = `HTTP ${upstream.status} from ${url}`;
-        continue;
-      }
-
-      const data = await upstream.text();
-      return new Response(data, {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    } catch (err) {
-      lastError = `${url} — ${err instanceof Error ? err.message : String(err)}`;
-    }
+  try {
+    const data = await Promise.any(UPSTREAM_ENDPOINTS.map((url) => tryEndpoint(url, body)));
+    return new Response(data, {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    const message = err instanceof AggregateError ? err.errors.map(String).join(" | ") : String(err);
+    return new Response(JSON.stringify({ error: `All Overpass endpoints failed: ${message}` }), {
+      status: 502,
+      headers: { "Content-Type": "application/json" },
+    });
   }
-
-  return new Response(JSON.stringify({ error: `All Overpass endpoints failed: ${lastError}` }), {
-    status: 502,
-    headers: { "Content-Type": "application/json" },
-  });
 }

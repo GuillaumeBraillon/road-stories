@@ -5,6 +5,14 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-05-20
+
+### Corrigé
+
+- `api/overpass.ts` — requêtes upstream passées en parallèle via `Promise.any()` (première réponse valide gagne) ; 6 mirrors Overpass dont `karte.io` et `openstreetmap.fr` connus pour fonctionner depuis les IPs Vercel ; ajout du header `User-Agent` ; validation JSON de la réponse pour rejeter les pages HTML renvoyées par certains endpoints en cas de rate-limit
+
+---
+
 ## [0.9.1] - 2026-05-20
 
 ### Corrigé
