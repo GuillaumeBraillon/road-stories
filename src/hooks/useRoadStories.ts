@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import type { AppStatus, Coords, POI, Theme } from "../types";
+import type { AppSettings, AppStatus, Coords, POI, PoiHistoryEntry, Theme } from "../types";
 import { useGeolocation } from "./useGeolocation";
 import { getNearbyPOIs } from "../services/overpass";
 import { calculateDistance } from "../services/geolocation";
@@ -7,12 +7,12 @@ import { getWikipediaSummary } from "../services/wikipedia";
 import { generateRoadMessage } from "../services/gemini";
 import { speak, stop } from "../services/tts";
 import { logger } from "../services/logger";
+import { loadHistory, saveHistory } from "../services/storage";
 
-const POLL_INTERVAL_MS = 30_000;
-const DETECTION_RADIUS_M = 500;
-const OVERPASS_MOVE_THRESHOLD_M = 100;
-
-export function useRoadStories(themes: Theme[]): {
+export function useRoadStories(
+  themes: Theme[],
+  settings: AppSettings
+): {
   isActive: boolean;
   setIsActive: (value: boolean) => void;
   status: AppStatus;
@@ -21,6 +21,8 @@ export function useRoadStories(themes: Theme[]): {
   currentMessageSource: "gemini" | "wiki+gemini" | null;
   isMuted: boolean;
   setIsMuted: (value: boolean) => void;
+  history: PoiHistoryEntry[];
+  deleteHistoryEntry: (index: number) => void;
 } {
   const [isActive, setIsActive] = useState(false);
   const [activeStatus, setActiveStatus] = useState<Exclude<AppStatus, "idle">>("listening");
@@ -28,6 +30,7 @@ export function useRoadStories(themes: Theme[]): {
   const [currentMessage, setCurrentMessage] = useState<string | null>(null);
   const [currentMessageSource, setCurrentMessageSource] = useState<"gemini" | "wiki+gemini" | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [history, setHistory] = useState<PoiHistoryEntry[]>(loadHistory);
 
   // "idle" est dérivé de isActive — les autres états sont pilotés par setActiveStatus dans le tick
   const status: AppStatus = isActive ? activeStatus : "idle";
@@ -39,9 +42,16 @@ export function useRoadStories(themes: Theme[]): {
   const isTickRunning = useRef(false);
   const coordsRef = useRef<Coords | null>(null);
   const themesRef = useRef<Theme[]>(themes);
-  const triggeredPOIs = useRef(new Set<string>());
+  const triggeredPOIs = useRef(
+    new Set<string>(
+      loadHistory()
+        .map((e) => e.poiId)
+        .filter((id): id is string => id !== "")
+    )
+  );
   const overpassCache = useRef<{ coords: Coords; themesKey: string; pois: POI[] } | null>(null);
   const isMutedRef = useRef(false);
+  const settingsRef = useRef(settings);
 
   useEffect(() => {
     coordsRef.current = coords;
@@ -53,6 +63,13 @@ export function useRoadStories(themes: Theme[]): {
     isMutedRef.current = isMuted;
     if (isMuted) stop();
   }, [isMuted]);
+  useEffect(() => {
+    settingsRef.current = settings;
+    overpassCache.current = null; // force re-fetch si rayon ou seuil changé
+  }, [settings]);
+  useEffect(() => {
+    saveHistory(history);
+  }, [history]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -82,14 +99,14 @@ export function useRoadStories(themes: Theme[]): {
           .map((t) => t.id)
           .join(",");
         const cache = overpassCache.current;
-        const hasMoved = !cache || calculateDistance(currentCoords, cache.coords) > OVERPASS_MOVE_THRESHOLD_M;
+        const hasMoved = !cache || calculateDistance(currentCoords, cache.coords) > settingsRef.current.overpassMoveThresholdM;
         const themesChanged = !cache || cache.themesKey !== themesKey;
 
         let pois: POI[];
         if (hasMoved || themesChanged) {
           logger.debug("tick", "Interrogation Overpass...");
           setActiveStatus("searching");
-          pois = await getNearbyPOIs(currentCoords, themesRef.current, DETECTION_RADIUS_M);
+          pois = await getNearbyPOIs(currentCoords, themesRef.current, settingsRef.current.detectionRadiusM);
           overpassCache.current = { coords: currentCoords, themesKey, pois };
           logger.debug(
             "tick",
@@ -108,20 +125,7 @@ export function useRoadStories(themes: Theme[]): {
         // Tags qui apportent du contenu réel au-delà de la simple classification OSM.
         // Pré-filtrage synchrone : on saute immédiatement les POIs sans contenu exploitable
         // plutôt qu'attendre le prochain tick de 30 secondes.
-        const ENRICHING_TAGS = [
-          "description",
-          "inscription",
-          "start_date",
-          "end_date",
-          "heritage",
-          "castle_type",
-          "site_type",
-          "denomination",
-          "religion",
-          "ele",
-          "height",
-          "wikidata",
-        ];
+        const ENRICHING_TAGS = ["description", "inscription", "heritage", "castle_type", "site_type", "denomination", "religion", "ele", "height", "wikidata"];
         let newPOI: POI | undefined;
         for (const poi of pois) {
           if (triggeredPOIs.current.has(poi.id)) continue;
@@ -139,8 +143,6 @@ export function useRoadStories(themes: Theme[]): {
           setActiveStatus("no-poi");
           return;
         }
-
-        const enabledThemes = themesRef.current.filter((t) => t.enabled).map((t) => t.label);
 
         // Wikipedia — résolu avant de déclencher l'état "generating" pour éviter un flash d'UI inutile
         // Pas de recherche Wikipedia si le nom est une inscription gravée (le titre serait le texte latin)
@@ -172,11 +174,14 @@ export function useRoadStories(themes: Theme[]): {
           coords: { lat: newPOI.lat, lng: newPOI.lng },
           poiTags: newPOI.tags,
           wikipediaSummary,
-          enabledThemes,
         });
         logger.debug("tick", "Message :", message);
 
         triggeredPOIs.current.add(newPOI.id);
+        setHistory((prev) => [
+          { poiId: newPOI.id, poiName: newPOI.name, message, source: wikipediaSummary ? "wiki+gemini" : "gemini", timestamp: new Date() },
+          ...prev,
+        ]);
         setCurrentMessage(message);
         setCurrentMessageSource(wikipediaSummary ? "wiki+gemini" : "gemini");
         setActiveStatus("speaking");
@@ -200,9 +205,9 @@ export function useRoadStories(themes: Theme[]): {
       }
     };
 
-    // Premier tick immédiat, puis toutes les 30 secondes
+    // Premier tick immédiat, puis intervalle configurable
     void tick();
-    const intervalId = setInterval(tick, POLL_INTERVAL_MS);
+    const intervalId = setInterval(tick, settings.pollIntervalMs);
 
     return () => {
       clearInterval(intervalId);
@@ -211,7 +216,15 @@ export function useRoadStories(themes: Theme[]): {
       setCurrentMessageSource(null);
       wakeLock?.release().catch(() => {});
     };
-  }, [isActive]);
+  }, [isActive, settings.pollIntervalMs]);
 
-  return { isActive, setIsActive, status, currentPOIName, currentMessage, currentMessageSource, isMuted, setIsMuted };
+  function deleteHistoryEntry(index: number) {
+    setHistory((prev) => {
+      const entry = prev[index];
+      if (entry?.poiId) triggeredPOIs.current.delete(entry.poiId);
+      return prev.filter((_, i) => i !== index);
+    });
+  }
+
+  return { isActive, setIsActive, status, currentPOIName, currentMessage, currentMessageSource, isMuted, setIsMuted, history, deleteHistoryEntry };
 }

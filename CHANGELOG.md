@@ -5,6 +5,21 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-05-20
+
+### Ajouté
+
+- Suppression d'une entrée d'historique — bouton 🗑️ sur chaque entrée du panneau Historique ; retire également le POI de `triggeredPOIs` pour autoriser la re-détection ultérieure
+- Panneau Réglages — bottom sheet ⚙️ accessible en haut à droite (à côté du bouton muet) avec trois paramètres configurables : intervalle de scan (10 / 20 / 30 / 60 s), rayon de détection (250 m / 500 m / 1 km / 2 km), seuil de déplacement Overpass (50 / 100 / 200 / 500 m) ; valeurs persistées en localStorage via `loadSettings` / `saveSettings` ; type `AppSettings` et constante `DEFAULT_SETTINGS` ajoutés dans `types/index.ts`
+- Log du prompt complet envoyé à Gemini — `=== System prompt ===` et `=== User prompt ===` dans la console de développement à chaque appel
+
+### Modifié
+
+- `gemini.ts` refactorisé — `SYSTEM_PROMPT` converti en constante (plus de fonction `buildSystemPrompt`) ; `handleFunctionCall` ne reçoit plus `systemPrompt` en paramètre ; boucle retry simplifiée en `for (let attempt = 0; …)`
+- `useRoadStories.ts` — les trois constantes de configuration (`POLL_INTERVAL_MS`, `DETECTION_RADIUS_M`, `OVERPASS_MOVE_THRESHOLD_M`) sont remplacées par le paramètre `settings: AppSettings` ; l'intervalle de scan est inclus dans les dépendances du `useEffect` principal ; le rayon et le seuil sont lus via `settingsRef` à chaque tick ; un changement de settings invalide le cache Overpass
+
+---
+
 ## [0.5.0] - 2026-05-20
 
 ### Ajouté

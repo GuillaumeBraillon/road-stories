@@ -197,6 +197,17 @@ Ne jamais committer `.env.local` (présent dans `.gitignore`).
 
 ---
 
+## Versioning — Automation (Hooks)
+
+> ⚠️ Ne **jamais modifier `package.json`** manuellement pour bumper la version.
+
+- **Pre-commit** : lit la version depuis `CHANGELOG.md` et met à jour `package.json` automatiquement avant de finaliser le commit.
+- **Post-commit** : détecte la nouvelle version et crée le tag Git correspondant (ex : `v0.6.0`).
+
+Seul `CHANGELOG.md` doit être mis à jour manuellement lors d'un changement de version.
+
+---
+
 ## Mode développement
 
 En dev, simuler une position GPS fixe près d'un monument connu :

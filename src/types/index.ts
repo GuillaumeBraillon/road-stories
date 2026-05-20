@@ -23,3 +23,23 @@ export type ThemeGroup = {
 };
 
 export type AppStatus = "idle" | "listening" | "searching" | "no-poi" | "wikipedia" | "generating" | "speaking";
+
+export type PoiHistoryEntry = {
+  poiId: string;
+  poiName: string;
+  message: string;
+  source: "gemini" | "wiki+gemini";
+  timestamp: Date;
+};
+
+export type AppSettings = {
+  pollIntervalMs: number;
+  detectionRadiusM: number;
+  overpassMoveThresholdM: number;
+};
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  pollIntervalMs: 30_000,
+  detectionRadiusM: 500,
+  overpassMoveThresholdM: 100,
+};

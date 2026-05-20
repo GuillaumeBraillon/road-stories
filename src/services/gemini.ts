@@ -4,7 +4,6 @@ import { getWikipediaSummary } from "./wikipedia";
 import { logger } from "./logger";
 
 const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
-// modeles connus : "gemini-3.1-flash-lite", "gemini-2.5-flash"
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 const wikipediaTool = {
@@ -28,20 +27,24 @@ export interface GenerateMessageParams {
   coords: { lat: number; lng: number };
   poiTags: Record<string, string>;
   wikipediaSummary: string | null;
-  enabledThemes: string[];
 }
 
-function buildSystemPrompt(enabledThemes: string[]): string {
-  return `Tu es un guide culturel pour automobilistes sur route ou autoroute.
+const SYSTEM_PROMPT = `Tu es un guide culturel pour automobilistes sur route ou autoroute.
 Génère un message audio de maximum 30 secondes (environ 60 mots).
 Le message doit être factuel, oral et naturel — jamais encyclopédique.
-Commence le message en nommant le lieu (ex: "Vous passez a proximité du Pont du Gard...", "de l'abbaye de..."), sans introduction ni salutation.
-Donne une information concrète ou une anecdote marquante sur le lieu en lien avec : ${enabledThemes.join(", ")}.
+Commence le message en nommant le lieu de façon variée. Utilise uniquement des formulations spatiales génériques (pas de "sur votre droite", "vous longez", "derrière vous" — la position exacte est inconnue au moment de la lecture). Exemples d'introductions possibles (ne te limite pas à celles-ci) :
+- "Dans ce secteur, le Pont du Gard..."
+- "Non loin d'ici, l'abbaye de..."
+- "Ce territoire est marqué par..."
+- "Fondée au XIIe siècle, l'abbaye de..."
+- "Ici se dresse le château de..."
+- "À proximité, les ruines de..."
+Ne commence jamais deux messages consécutifs par la même formule.
+Donne une information concrète ou une anecdote marquante sur le lieu.
 Ne pose pas de question. Ne conclus pas par une formule de style. Reste factuel jusqu'au bout.
 Si tu utilises l'outil Wikipedia et qu'il retourne "Non disponible", génère le message sans Wikipedia — ne rappelle pas l'outil une seconde fois.
 Si les informations disponibles sont "Non disponible", appuie-toi sur les tags OSM pour caractériser le lieu. Ne génère jamais de détails historiques ou géographiques précis sur un lieu que tu ne peux pas identifier avec certitude depuis les coordonnées GPS et les tags fournis.
 Réponds uniquement avec le texte à lire à voix haute.`;
-}
 
 const CULTURAL_TAG_PREFIXES = [
   "historic",
@@ -71,7 +74,6 @@ function buildUserPrompt(poiName: string, coords: { lat: number; lng: number }, 
     .map(([k, v]) => `${k}=${v}`)
     .join(", ");
 
-  // Nom dérivé d'une inscription gravée : demander une traduction/explication plutôt qu'une description de lieu
   if (poiTags["inscription"] === poiName) {
     return `Un monument se trouve à proximité — coordonnées GPS : ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}
 Tags OSM : ${relevantTags || "aucun"}
@@ -102,15 +104,16 @@ function isRateLimitError(error: unknown): boolean {
 }
 
 async function generateWithRetry(params: Parameters<typeof ai.models.generateContent>[0]): ReturnType<typeof ai.models.generateContent> {
-  const model = params.model ?? GEMINI_MODEL;
-  logger.debug("gemini", `URL : https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`);
-  logger.debug("gemini", "Envoi :", typeof params.contents === "string" ? params.contents : JSON.stringify(params.contents, null, 2));
+  const systemInstruction = params.config?.systemInstruction;
+  logger.debug("gemini", "=== System prompt ===\n" + (typeof systemInstruction === "string" ? systemInstruction : JSON.stringify(systemInstruction, null, 2)));
+  logger.debug("gemini", "=== User prompt ===\n" + (typeof params.contents === "string" ? params.contents : JSON.stringify(params.contents, null, 2)));
 
   let lastError: unknown;
-  for (const [attempt, delay] of [[0, 0], ...RETRY_DELAYS_MS.map((d, i) => [i + 1, d])]) {
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     if (attempt > 0) {
+      const delay = RETRY_DELAYS_MS[attempt - 1];
       logger.debug("gemini", `Retry ${attempt} après ${delay}ms...`);
-      await new Promise((resolve) => setTimeout(resolve, delay as number));
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
     try {
       return await ai.models.generateContent(params);
@@ -122,7 +125,7 @@ async function generateWithRetry(params: Parameters<typeof ai.models.generateCon
   throw lastError;
 }
 
-async function handleFunctionCall(call: FunctionCall, userPrompt: string, systemPrompt: string): Promise<string> {
+async function handleFunctionCall(call: FunctionCall, userPrompt: string): Promise<string> {
   const title = String((call.args as Record<string, unknown>)["title"] ?? call.name ?? "");
   const summary = await getWikipediaSummary(title);
   logger.debug("gemini", `Wikipedia (tool call) "${title}" :`, summary ?? "Non disponible");
@@ -132,21 +135,14 @@ async function handleFunctionCall(call: FunctionCall, userPrompt: string, system
     { role: "model", parts: [{ functionCall: { name: call.name, args: call.args, id: call.id } }] },
     {
       role: "user",
-      parts: [
-        {
-          functionResponse: {
-            name: call.name,
-            response: { output: summary ?? "Non disponible" },
-          },
-        },
-      ],
+      parts: [{ functionResponse: { name: call.name, response: { output: summary ?? "Non disponible" } } }],
     },
   ];
 
   const response = await generateWithRetry({
     model: GEMINI_MODEL,
     contents,
-    config: { systemInstruction: systemPrompt },
+    config: { systemInstruction: SYSTEM_PROMPT },
   });
 
   logTokens(response);
@@ -154,26 +150,24 @@ async function handleFunctionCall(call: FunctionCall, userPrompt: string, system
 }
 
 export async function generateRoadMessage(params: GenerateMessageParams): Promise<string> {
-  const { poiName, coords, poiTags, wikipediaSummary, enabledThemes } = params;
-  const systemPrompt = buildSystemPrompt(enabledThemes);
+  const { poiName, coords, poiTags, wikipediaSummary } = params;
   const userPrompt = buildUserPrompt(poiName, coords, poiTags, wikipediaSummary);
-
-  // On passe l'outil uniquement si on n'a pas pu obtenir de résumé Wikipedia,
-  // pour laisser Gemini tenter avec un titre alternatif.
-  // Si on a déjà un résumé, pas besoin de l'outil.
-  const tools = wikipediaSummary === null ? [wikipediaTool] : undefined;
 
   const response = await generateWithRetry({
     model: GEMINI_MODEL,
     contents: userPrompt,
-    config: { ...(tools ? { tools } : {}), systemInstruction: systemPrompt },
+    config: {
+      systemInstruction: SYSTEM_PROMPT,
+      // Outil Wikipedia uniquement si on n'a pas déjà un résumé — laisse Gemini tenter un titre alternatif
+      ...(wikipediaSummary === null ? { tools: [wikipediaTool] } : {}),
+    },
   });
 
   logTokens(response);
 
   const functionCalls = response.functionCalls;
   if (functionCalls && functionCalls.length > 0) {
-    return handleFunctionCall(functionCalls[0], userPrompt, systemPrompt);
+    return handleFunctionCall(functionCalls[0], userPrompt);
   }
 
   return response.text ?? "";
