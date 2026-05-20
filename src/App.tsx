@@ -6,6 +6,8 @@ import { speak, stop } from "./services/tts";
 import { ToggleButton } from "./components/ToggleButton";
 import { StatusIndicator } from "./components/StatusIndicator";
 import { ThemeSelector } from "./components/ThemeSelector";
+import { usePWAInstall } from "./hooks/usePWAInstall";
+import { Download } from "lucide-react";
 
 const DEFAULT_THEME_GROUPS: ThemeGroup[] = [
   {
@@ -163,6 +165,7 @@ function App() {
   const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
+  const { isInstallable, install } = usePWAInstall();
 
   useEffect(() => {
     saveSettings(settings);
@@ -218,6 +221,16 @@ function App() {
           <span className="text-xs text-gray-500">v{__APP_VERSION__}</span>
         </div>
         <div className="flex items-center gap-1">
+          {/* BOUTON PWA INSTALL */}
+          {isInstallable && (
+            <button
+              onClick={install}
+              className="flex items-center gap-1.5 bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors animate-in fade-in slide-in-from-top-2"
+            >
+              <Download size={14} />
+              <span className="hidden sm:inline">Installer</span>
+            </button>
+          )}
           <button onClick={() => setIsSettingsPanelOpen(true)} className="text-2xl p-2 rounded-full hover:bg-gray-800 transition-colors" aria-label="Réglages">
             ⚙️
           </button>

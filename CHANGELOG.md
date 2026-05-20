@@ -5,6 +5,19 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-05-20
+
+### Ajouté
+
+- Bouton d'installation PWA — `usePWAInstall.ts` écoute `beforeinstallprompt` et expose `isInstallable` / `install` ; bouton visible dans l'en-tête uniquement quand l'app est installable
+
+### Corrigé
+
+- `usePWAInstall.ts` — `await` manquant sur `deferredPrompt.prompt()` ; converti de `const` arrow vers `export function` (convention du projet)
+- `sw.js` — `self.skipWaiting()` enveloppé dans `event.waitUntil()` ; `return;` inutile dans le listener `fetch` supprimé ; commentaire erroné ("Supabase") corrigé
+
+---
+
 ## [0.6.0] - 2026-05-20
 
 ### Ajouté

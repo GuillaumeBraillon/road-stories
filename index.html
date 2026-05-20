@@ -2,12 +2,29 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/icon_v2.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <meta name="description" content="Road Stories — PWA mobile qui diffuse des anecdotes et informations culturelles audio pendant les trajets" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="apple-touch-icon" href="/icon_v2.svg" />
+    <link rel="manifest" href="/manifest.json" />
     <title>Road Stories</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Enregistrement manuel du Service Worker pour PWA
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/sw.js")
+            .then(() => {})
+            .catch((err) => console.error("SW registration failed: ", err));
+        });
+      }
+    </script>
   </body>
 </html>
