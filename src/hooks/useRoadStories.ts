@@ -190,6 +190,7 @@ export function useRoadStories(
         }
       } catch (error) {
         logger.error("Road Stories error:", error);
+        if (!didStartSpeaking) setActiveStatus("listening");
       } finally {
         isTickRunning.current = false;
         if (didStartSpeaking) {

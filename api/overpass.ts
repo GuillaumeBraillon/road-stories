@@ -16,6 +16,12 @@ const UPSTREAM_ENDPOINTS = [
 
 const PER_ENDPOINT_TIMEOUT_MS = 9_000;
 
+// AbortSignal.timeout() n'est pas fiable dans le Vercel Edge Runtime.
+// On utilise Promise.race() avec un timeout manuel pour garantir le comportement.
+function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  return Promise.race([fetch(url, init), new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs))]);
+}
+
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
@@ -26,12 +32,11 @@ export default async function handler(request: Request): Promise<Response> {
 
   for (const url of UPSTREAM_ENDPOINTS) {
     try {
-      const upstream = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body,
-        signal: AbortSignal.timeout(PER_ENDPOINT_TIMEOUT_MS),
-      });
+      const upstream = await fetchWithTimeout(
+        url,
+        { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body },
+        PER_ENDPOINT_TIMEOUT_MS
+      );
 
       if (!upstream.ok) {
         lastError = `HTTP ${upstream.status} from ${url}`;
