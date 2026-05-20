@@ -5,6 +5,14 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2026-05-20
+
+### Corrigé
+
+- `vite.config.ts` — ajout d'un proxy dev (`server.proxy`) qui forward `/api/overpass` vers `https://overpass-api.de/api/interpreter` côté Node.js, éliminant l'erreur 404 en local (Vite ne sert pas les Edge Functions Vercel) sans impact sur le build de production
+
+---
+
 ## [0.9.2] - 2026-05-20
 
 ### Corrigé

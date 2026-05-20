@@ -11,4 +11,15 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(version),
   },
+  server: {
+    proxy: {
+      // En dev local, /api/overpass est proxifié vers overpass-api.de côté serveur Node.js
+      // → pas de CORS, même comportement que la Vercel Edge Function en production
+      "/api/overpass": {
+        target: "https://overpass-api.de",
+        changeOrigin: true,
+        rewrite: () => "/api/interpreter",
+      },
+    },
+  },
 });
