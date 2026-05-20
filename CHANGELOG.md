@@ -5,6 +5,19 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-05-20
+
+### Ajouté
+
+- `manifest.json` — captures d'écran PWA `screenshot-mobile.png` (390×844) et `screenshot-desktop.png` (1280×720, `form_factor: "wide"`) pour l'interface d'installation enrichie Chrome/Edge
+
+### Corrigé
+
+- Icônes PWA — viewBox `692×690` (non carré) corrigé à `692×692` lors de la génération ; `icon-192.png` et `icon-512.png` ont désormais les dimensions exactes déclarées dans le manifest
+- `manifest.json` — `"purpose": "any maskable"` séparé en deux entrées distinctes (`"any"` + `"maskable"`) conformément aux recommandations W3C
+
+---
+
 ## [0.8.0] - 2026-05-20
 
 ### Corrigé
