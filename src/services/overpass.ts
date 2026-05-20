@@ -2,10 +2,10 @@ import type { Coords, POI, Theme } from "../types";
 import { logger } from "./logger";
 
 const OVERPASS_ENDPOINTS = [
-  "/api/overpass", // Vercel Edge proxy (évite les erreurs CORS en production)
+  "/api/overpass", // Vercel Edge proxy (production — évite les erreurs CORS)
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass.private.coffee/api/interpreter",
-  // overpass-api.de intentionnellement absent : CORS bloqué depuis le navigateur
+  "https://overpass-api.de/api/interpreter", // dev local uniquement (CORS bloqué en production)
 ];
 
 const REQUEST_TIMEOUT_MS = 10_000;

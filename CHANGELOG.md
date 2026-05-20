@@ -5,6 +5,14 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-05-20
+
+### Corrigé
+
+- `overpass.ts` — `overpass-api.de` restauré en dernier fallback client (CORS autorisé depuis `localhost`, indispensable pour le dev local quand le proxy n'existe pas)
+- `api/overpass.ts` — `AbortSignal.timeout()` remplacé par `Promise.race()` + `setTimeout` (non fiable dans le Vercel Edge Runtime) ; proxy tente désormais 3 upstream avec 9 s de timeout chacun
+- `useRoadStories.ts` — status bloqué sur `"searching"` corrigé : le `catch` du tick remet maintenant `"listening"` quand l'erreur survient avant `didStartSpeaking`
+
 ## [0.9.0] - 2026-05-20
 
 ### Ajouté
