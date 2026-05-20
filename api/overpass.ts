@@ -8,7 +8,13 @@
 
 export const config = { runtime: "edge" };
 
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+const UPSTREAM_ENDPOINTS = [
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass-api.de/api/interpreter",
+];
+
+const PER_ENDPOINT_TIMEOUT_MS = 9_000;
 
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== "POST") {
@@ -16,28 +22,34 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   const body = await request.text();
+  let lastError = "unknown";
 
-  try {
-    const upstream = await fetch(OVERPASS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-    });
+  for (const url of UPSTREAM_ENDPOINTS) {
+    try {
+      const upstream = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+        signal: AbortSignal.timeout(PER_ENDPOINT_TIMEOUT_MS),
+      });
 
-    if (!upstream.ok) {
-      return new Response(`Overpass upstream error: ${upstream.status}`, { status: upstream.status });
+      if (!upstream.ok) {
+        lastError = `HTTP ${upstream.status} from ${url}`;
+        continue;
+      }
+
+      const data = await upstream.text();
+      return new Response(data, {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (err) {
+      lastError = `${url} — ${err instanceof Error ? err.message : String(err)}`;
     }
-
-    const data = await upstream.text();
-    return new Response(data, {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return new Response(JSON.stringify({ error: message }), {
-      status: 502,
-      headers: { "Content-Type": "application/json" },
-    });
   }
+
+  return new Response(JSON.stringify({ error: `All Overpass endpoints failed: ${lastError}` }), {
+    status: 502,
+    headers: { "Content-Type": "application/json" },
+  });
 }

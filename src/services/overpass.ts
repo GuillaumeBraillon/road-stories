@@ -5,7 +5,7 @@ const OVERPASS_ENDPOINTS = [
   "/api/overpass", // Vercel Edge proxy (évite les erreurs CORS en production)
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass.private.coffee/api/interpreter",
-  "https://overpass-api.de/api/interpreter",
+  // overpass-api.de intentionnellement absent : CORS bloqué depuis le navigateur
 ];
 
 const REQUEST_TIMEOUT_MS = 10_000;
