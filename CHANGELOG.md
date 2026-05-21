@@ -5,6 +5,24 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-05-21
+
+### Ajouté
+
+- `src/services/agentTools.ts` — registre d'outils côté front (`functionDeclarations` + dispatcher d'exécution) pour préparer l'ajout de nouveaux tools (ex: Places) sans recoupler `gemini.ts` à chaque outil.
+
+### Modifié
+
+- `src/services/gemini.ts` — refactor de l'orchestration tool-use : prise en charge de plusieurs `functionCalls`, exécution parallèle des outils via `Promise.all`, puis second appel Gemini unique avec l'historique complet des réponses d'outils.
+- `src/services/gemini.ts` — contrat `GenerateMessageParams` simplifié : suppression de `wikipediaSummary` (la décision d'appeler les tools est désormais gérée par Gemini).
+- `src/hooks/useRoadStories.ts` — suppression du pré-appel Wikipedia dans le tick; le hook délègue la décision d'enrichissement à Gemini et envoie uniquement `poiName`, `coords`, `poiTags`.
+- `api/gemini.ts` — alignement du contrat serveur sur le front (suppression de `wikipediaSummary` dans le payload attendu).
+- `api/gemini.ts` — support de plusieurs appels outils dans un même tour (exécution parallèle + second tour sans tools).
+
+### Corrigé
+
+- `api/gemini.ts` — correction de l'erreur Gemini 400 liée à `thought_signature` : les `functionCall` renvoyés par Gemini sont désormais réinjectés tels quels au second tour (au lieu d'être reconstruits manuellement).
+
 ## [1.0.3] - 2026-05-21
 
 - Update Copilot instructions and examples to use gemini-3.1-flash-lite instead of gemini-2.5-flash. Add .vercel to .gitignore and introduce a new npm script "dev:vercel" to run vercel dev with .env.local loaded. Add a CHANGELOG entry for 1.0.3 (Vercel server config). Rename specs/road-stories-places-v3.md to specs/road-stories-places.md and add a new snapshot spec (specs/snapshot on v1.0.2.md) describing v1.0.2 runtime behavior.

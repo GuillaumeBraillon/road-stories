@@ -55,12 +55,11 @@ interface GenerateMessageParams {
   poiName: string;
   coords: { lat: number; lng: number };
   poiTags: Record<string, string>;
-  wikipediaSummary: string | null;
 }
 
 type GeminiPart =
   | { text: string }
-  | { functionCall: { name: string; args: Record<string, unknown> } }
+  | { functionCall: { name: string; args: Record<string, unknown> } & Record<string, unknown> }
   | { functionResponse: { name: string; response: { output: string } } };
 
 type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
@@ -70,7 +69,7 @@ interface GeminiApiResponse {
   error?: { code: number; message: string };
 }
 
-function buildUserPrompt(poiName: string, coords: { lat: number; lng: number }, poiTags: Record<string, string>, summary: string | null): string {
+function buildUserPrompt(poiName: string, coords: { lat: number; lng: number }, poiTags: Record<string, string>): string {
   const relevantTags = Object.entries(poiTags)
     .filter(([k]) => CULTURAL_TAG_PREFIXES.some((prefix) => k === prefix || k.startsWith(prefix + ":")))
     .map(([k, v]) => `${k}=${v}`)
@@ -87,7 +86,6 @@ Génère le message.`;
   return `Lieu : ${poiName}
 Coordonnées GPS : ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}
 Tags OSM : ${relevantTags || "aucun"}
-Informations disponibles : ${summary ?? "Non disponible"}
 Génère le message.`;
 }
 
@@ -95,12 +93,6 @@ function extractText(data: GeminiApiResponse): string {
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   const textPart = parts.find((p): p is { text: string } => "text" in p);
   return textPart?.text ?? "";
-}
-
-function extractFunctionCall(data: GeminiApiResponse): { name: string; args: Record<string, unknown> } | null {
-  const parts = data.candidates?.[0]?.content?.parts ?? [];
-  const fcPart = parts.find((p): p is { functionCall: { name: string; args: Record<string, unknown> } } => "functionCall" in p);
-  return fcPart?.functionCall ?? null;
 }
 
 async function callGeminiAPI(apiKey: string, contents: GeminiContent[], withTools: boolean): Promise<GeminiApiResponse> {
@@ -163,20 +155,38 @@ export default async function handler(request: Request): Promise<Response> {
     });
   }
 
-  const { poiName, coords, poiTags, wikipediaSummary } = params;
-  const userPrompt = buildUserPrompt(poiName, coords, poiTags, wikipediaSummary);
+  const { poiName, coords, poiTags } = params;
+  const userPrompt = buildUserPrompt(poiName, coords, poiTags);
   const userContents: GeminiContent[] = [{ role: "user", parts: [{ text: userPrompt }] }];
 
   try {
-    const data = await callWithRetry(apiKey, userContents, wikipediaSummary === null);
+    const data = await callWithRetry(apiKey, userContents, true);
 
-    const functionCall = extractFunctionCall(data);
-    if (functionCall) {
-      const toolResult = await executeTool(functionCall.name, functionCall.args);
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    const functionCallParts = parts.filter(
+      (part): part is { functionCall: { name: string; args: Record<string, unknown> } & Record<string, unknown> } => "functionCall" in part
+    );
+    const functionCalls = functionCallParts.map((part) => part.functionCall);
+
+    if (functionCalls.length > 0) {
+      const toolResults = await Promise.all(functionCalls.map((call) => executeTool(call.name, call.args)));
+
       const toolContents: GeminiContent[] = [
         ...userContents,
-        { role: "model", parts: [{ functionCall: { name: functionCall.name, args: functionCall.args } }] },
-        { role: "user", parts: [{ functionResponse: { name: functionCall.name, response: { output: toolResult } } }] },
+        {
+          role: "model",
+          // Important: conserver les functionCall bruts renvoyés par Gemini (thought_signature, etc.).
+          parts: functionCallParts,
+        },
+        {
+          role: "user",
+          parts: functionCalls.map((call, index) => ({
+            functionResponse: {
+              name: call.name,
+              response: { output: toolResults[index] },
+            },
+          })),
+        },
       ];
       const followUp = await callGeminiAPI(apiKey, toolContents, false);
       return new Response(JSON.stringify({ message: extractText(followUp) }), {

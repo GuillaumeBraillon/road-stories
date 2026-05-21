@@ -3,7 +3,6 @@ import type { AppSettings, AppStatus, Coords, POI, PoiHistoryEntry, Theme } from
 import { useGeolocation } from "./useGeolocation";
 import { getNearbyPOIs } from "../services/overpass";
 import { calculateDistance } from "../services/geolocation";
-import { getWikipediaSummary } from "../services/wikipedia";
 import { generateRoadMessage } from "../services/gemini";
 import { speak, stop } from "../services/tts";
 import { logger } from "../services/logger";
@@ -144,18 +143,9 @@ export function useRoadStories(
           return;
         }
 
-        // Wikipedia — résolu avant de déclencher l'état "generating" pour éviter un flash d'UI inutile
-        // Pas de recherche Wikipedia si le nom est une inscription gravée (le titre serait le texte latin)
-        const isInscriptionName = !newPOI.tags["wikipedia"] && newPOI.tags["inscription"] === newPOI.name;
         setCurrentPOIName(newPOI.name);
-        setActiveStatus("wikipedia");
-        logger.debug("tick", "Wikipedia...");
-        const wikiTag = newPOI.tags["wikipedia"];
-        const wikiTitle = wikiTag ? wikiTag.replace(/^\w{2}:/, "") : newPOI.name;
-        const wikipediaSummary = isInscriptionName ? null : await getWikipediaSummary(wikiTitle);
-
-        // Panneau indicateur sans fiche Wikipedia : contexte insuffisant pour un message fiable
-        if (wikipediaSummary === null && newPOI.tags["information"] === "guidepost") {
+        // Les panneaux guidepost sont souvent trop pauvres pour une narration fiable.
+        if (newPOI.tags["information"] === "guidepost") {
           logger.debug("tick", "POI ignoré (guidepost sans Wikipedia) :", newPOI.name);
           triggeredPOIs.current.add(newPOI.id);
           return;
@@ -174,17 +164,13 @@ export function useRoadStories(
           poiName: newPOI.name,
           coords: { lat: newPOI.lat, lng: newPOI.lng },
           poiTags: newPOI.tags,
-          wikipediaSummary,
         });
         logger.debug("tick", "Message :", message);
 
         triggeredPOIs.current.add(newPOI.id);
-        setHistory((prev) => [
-          { poiId: newPOI.id, poiName: newPOI.name, message, source: wikipediaSummary ? "wiki+gemini" : "gemini", timestamp: new Date() },
-          ...prev,
-        ]);
+        setHistory((prev) => [{ poiId: newPOI.id, poiName: newPOI.name, message, source: "gemini", timestamp: new Date() }, ...prev]);
         setCurrentMessage(message);
-        setCurrentMessageSource(wikipediaSummary ? "wiki+gemini" : "gemini");
+        setCurrentMessageSource("gemini");
         setActiveStatus("speaking");
         if (!isMutedRef.current) {
           await speak(message);

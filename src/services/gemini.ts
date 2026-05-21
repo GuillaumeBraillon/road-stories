@@ -1,6 +1,6 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import type { Content, FunctionCall, GenerateContentResponse } from "@google/genai";
-import { getWikipediaSummary } from "./wikipedia";
+import { executeToolCall, toolDeclarations } from "./agentTools";
 import { logger } from "./logger";
 
 // Instanciation différée — uniquement en dev (la clé n'existe pas en production)
@@ -13,27 +13,10 @@ function getAI(): GoogleGenAI {
 //Gemini 3.1 Flash Lite : 'gemini-3.1-flash-lite'
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
 
-const wikipediaTool = {
-  functionDeclarations: [
-    {
-      name: "getWikipediaSummary",
-      description: "Récupère le résumé Wikipedia en français d'un lieu",
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          title: { type: Type.STRING, description: "Nom du lieu à rechercher" },
-        },
-        required: ["title"],
-      },
-    },
-  ],
-};
-
 export interface GenerateMessageParams {
   poiName: string;
   coords: { lat: number; lng: number };
   poiTags: Record<string, string>;
-  wikipediaSummary: string | null;
 }
 
 const SYSTEM_PROMPT = `Tu es un guide culturel pour automobilistes sur route ou autoroute.
@@ -75,7 +58,7 @@ const CULTURAL_TAG_PREFIXES = [
   "height",
 ];
 
-function buildUserPrompt(poiName: string, coords: { lat: number; lng: number }, poiTags: Record<string, string>, summary: string | null): string {
+function buildUserPrompt(poiName: string, coords: { lat: number; lng: number }, poiTags: Record<string, string>): string {
   const relevantTags = Object.entries(poiTags)
     .filter(([k]) => CULTURAL_TAG_PREFIXES.some((prefix) => k === prefix || k.startsWith(prefix + ":")))
     .map(([k, v]) => `${k}=${v}`)
@@ -92,7 +75,6 @@ Génère le message.`;
   return `Lieu : ${poiName}
 Coordonnées GPS : ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}
 Tags OSM : ${relevantTags || "aucun"}
-Informations disponibles : ${summary ?? "Non disponible"}
 Génère le message.`;
 }
 
@@ -134,28 +116,8 @@ async function generateWithRetry(
   throw lastError;
 }
 
-async function handleFunctionCall(call: FunctionCall, userPrompt: string): Promise<string> {
-  const title = String((call.args as Record<string, unknown>)["title"] ?? call.name ?? "");
-  const summary = await getWikipediaSummary(title);
-  logger.debug("gemini", `Wikipedia (tool call) "${title}" :`, summary ?? "Non disponible");
-
-  const contents: Content[] = [
-    { role: "user", parts: [{ text: userPrompt }] },
-    { role: "model", parts: [{ functionCall: { name: call.name, args: call.args, id: call.id } }] },
-    {
-      role: "user",
-      parts: [{ functionResponse: { name: call.name, response: { output: summary ?? "Non disponible" } } }],
-    },
-  ];
-
-  const response = await generateWithRetry({
-    model: GEMINI_MODEL,
-    contents,
-    config: { systemInstruction: SYSTEM_PROMPT },
-  });
-
-  logTokens(response);
-  return response.text ?? "";
+async function handleFunctionCall(call: FunctionCall): Promise<string> {
+  return executeToolCall(call);
 }
 
 export async function generateRoadMessage(params: GenerateMessageParams): Promise<string> {
@@ -172,16 +134,15 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
   }
 
   // En dev local : appel direct avec VITE_GEMINI_API_KEY (jamais committé, jamais déployé)
-  const { poiName, coords, poiTags, wikipediaSummary } = params;
-  const userPrompt = buildUserPrompt(poiName, coords, poiTags, wikipediaSummary);
+  const { poiName, coords, poiTags } = params;
+  const userPrompt = buildUserPrompt(poiName, coords, poiTags);
 
   const response = await generateWithRetry({
     model: GEMINI_MODEL,
     contents: userPrompt,
     config: {
       systemInstruction: SYSTEM_PROMPT,
-      // Outil Wikipedia uniquement si on n'a pas déjà un résumé — laisse Gemini tenter un titre alternatif
-      ...(wikipediaSummary === null ? { tools: [wikipediaTool] } : {}),
+      tools: [toolDeclarations],
     },
   });
 
@@ -189,7 +150,42 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
 
   const functionCalls = response.functionCalls;
   if (functionCalls && functionCalls.length > 0) {
-    return handleFunctionCall(functionCalls[0], userPrompt);
+    const calls = functionCalls;
+    const toolResults = await Promise.all(calls.map((call) => handleFunctionCall(call)));
+
+    logger.debug(
+      "gemini",
+      `${calls.length} outil(s) appelé(s) :`,
+      calls.map((call) => call.name)
+    );
+
+    const contents: Content[] = [
+      { role: "user", parts: [{ text: userPrompt }] },
+      {
+        role: "model",
+        parts: calls.map((call) => ({
+          functionCall: { name: call.name, args: call.args, id: call.id },
+        })),
+      },
+      {
+        role: "user",
+        parts: calls.map((call, index) => ({
+          functionResponse: {
+            name: call.name,
+            response: { output: toolResults[index] },
+          },
+        })),
+      },
+    ];
+
+    const finalResponse = await generateWithRetry({
+      model: GEMINI_MODEL,
+      contents,
+      config: { systemInstruction: SYSTEM_PROMPT },
+    });
+
+    logTokens(finalResponse);
+    return finalResponse.text ?? "";
   }
 
   return response.text ?? "";
