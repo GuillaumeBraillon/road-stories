@@ -3,7 +3,12 @@ import type { Content, FunctionCall, GenerateContentResponse } from "@google/gen
 import { getWikipediaSummary } from "./wikipedia";
 import { logger } from "./logger";
 
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+// Instanciation différée — uniquement en dev (la clé n'existe pas en production)
+let _ai: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI {
+  if (!_ai) _ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+  return _ai;
+}
 //Gemini 2.5 Flash : 'gemini-2.5-flash'
 //Gemini 3.1 Flash Lite : 'gemini-3.1-flash-lite'
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
@@ -105,7 +110,9 @@ function isRateLimitError(error: unknown): boolean {
   return error instanceof Error && error.message.includes("429");
 }
 
-async function generateWithRetry(params: Parameters<typeof ai.models.generateContent>[0]): ReturnType<typeof ai.models.generateContent> {
+async function generateWithRetry(
+  params: Parameters<InstanceType<typeof GoogleGenAI>["models"]["generateContent"]>[0]
+): ReturnType<InstanceType<typeof GoogleGenAI>["models"]["generateContent"]> {
   const systemInstruction = params.config?.systemInstruction;
   logger.debug("gemini", "=== System prompt ===\n" + (typeof systemInstruction === "string" ? systemInstruction : JSON.stringify(systemInstruction, null, 2)));
   logger.debug("gemini", "=== User prompt ===\n" + (typeof params.contents === "string" ? params.contents : JSON.stringify(params.contents, null, 2)));
@@ -118,7 +125,7 @@ async function generateWithRetry(params: Parameters<typeof ai.models.generateCon
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
     try {
-      return await ai.models.generateContent(params);
+      return await getAI().models.generateContent(params);
     } catch (error) {
       if (isRateLimitError(error)) throw error; // 429 : pas de retry, laisser le prochain tick réessayer
       lastError = error;

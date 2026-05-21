@@ -5,6 +5,12 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-05-21
+
+### Fix
+
+- Error with API KEY in production
+
 ## [1.0.0] - 2026-05-21
 
 ### Sécurité
