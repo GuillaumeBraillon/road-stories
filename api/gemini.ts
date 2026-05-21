@@ -1,17 +1,16 @@
 /**
  * Vercel Edge Function — Gemini AI
  *
- * Protège la clé API Gemini côté serveur (variable GEMINI_API_KEY sans préfixe VITE_).
- * Les tools (Wikipedia, etc.) sont exécutés ici — extensibles via api/tools/index.ts.
+ * Implémentation via l'API REST Gemini (fetch natif) — aucune dépendance npm.
+ * Compatible Vercel Edge Runtime. La clé GEMINI_API_KEY reste côté serveur.
  */
 
 export const config = { runtime: "edge" };
 
-import { GoogleGenAI } from "@google/genai";
-import type { Content } from "@google/genai";
 import { toolDeclarations, executeTool } from "./tools/index";
 
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
+const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 const SYSTEM_PROMPT = `Tu es un guide culturel pour automobilistes sur route ou autoroute.
 Génère un message audio de maximum 30 secondes (environ 60 mots).
@@ -59,6 +58,18 @@ interface GenerateMessageParams {
   wikipediaSummary: string | null;
 }
 
+type GeminiPart =
+  | { text: string }
+  | { functionCall: { name: string; args: Record<string, unknown> } }
+  | { functionResponse: { name: string; response: { output: string } } };
+
+type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
+
+interface GeminiApiResponse {
+  candidates?: Array<{ content?: { parts?: GeminiPart[] } }>;
+  error?: { code: number; message: string };
+}
+
 function buildUserPrompt(poiName: string, coords: { lat: number; lng: number }, poiTags: Record<string, string>, summary: string | null): string {
   const relevantTags = Object.entries(poiTags)
     .filter(([k]) => CULTURAL_TAG_PREFIXES.some((prefix) => k === prefix || k.startsWith(prefix + ":")))
@@ -80,10 +91,53 @@ Informations disponibles : ${summary ?? "Non disponible"}
 Génère le message.`;
 }
 
+function extractText(data: GeminiApiResponse): string {
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  const textPart = parts.find((p): p is { text: string } => "text" in p);
+  return textPart?.text ?? "";
+}
+
+function extractFunctionCall(data: GeminiApiResponse): { name: string; args: Record<string, unknown> } | null {
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  const fcPart = parts.find((p): p is { functionCall: { name: string; args: Record<string, unknown> } } => "functionCall" in p);
+  return fcPart?.functionCall ?? null;
+}
+
+async function callGeminiAPI(apiKey: string, contents: GeminiContent[], withTools: boolean): Promise<GeminiApiResponse> {
+  const url = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  const body = {
+    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents,
+    ...(withTools ? { tools: [{ function_declarations: toolDeclarations.functionDeclarations }] } : {}),
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const data = (await response.json()) as GeminiApiResponse;
+  if (data.error) throw new Error(`Gemini ${data.error.code}: ${data.error.message}`);
+  return data;
+}
+
 const RETRY_DELAYS_MS = [1_000, 2_000];
 
-function isRateLimitError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes("429");
+async function callWithRetry(apiKey: string, contents: GeminiContent[], withTools: boolean): Promise<GeminiApiResponse> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1] as number));
+    }
+    try {
+      return await callGeminiAPI(apiKey, contents, withTools);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("429")) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 export default async function handler(request: Request): Promise<Response> {
@@ -111,57 +165,27 @@ export default async function handler(request: Request): Promise<Response> {
 
   const { poiName, coords, poiTags, wikipediaSummary } = params;
   const userPrompt = buildUserPrompt(poiName, coords, poiTags, wikipediaSummary);
-
-  const ai = new GoogleGenAI({ apiKey });
-
-  async function callGemini(contents: string | Content[]): Promise<string> {
-    let lastError: unknown;
-    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
-      if (attempt > 0) {
-        const delay = RETRY_DELAYS_MS[attempt - 1] as number;
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-      try {
-        const response = await ai.models.generateContent({
-          model: GEMINI_MODEL,
-          contents,
-          config: {
-            systemInstruction: SYSTEM_PROMPT,
-            ...(wikipediaSummary === null ? { tools: [toolDeclarations] } : {}),
-          },
-        });
-
-        const functionCalls = response.functionCalls;
-        if (functionCalls && functionCalls.length > 0) {
-          const call = functionCalls[0];
-          const toolResult = await executeTool(call.name ?? "", (call.args ?? {}) as Record<string, unknown>);
-
-          const toolContents: Content[] = [
-            { role: "user", parts: [{ text: userPrompt }] },
-            { role: "model", parts: [{ functionCall: { name: call.name, args: call.args, id: call.id } }] },
-            { role: "user", parts: [{ functionResponse: { name: call.name, response: { output: toolResult } } }] },
-          ];
-
-          const followUp = await ai.models.generateContent({
-            model: GEMINI_MODEL,
-            contents: toolContents,
-            config: { systemInstruction: SYSTEM_PROMPT },
-          });
-          return followUp.text ?? "";
-        }
-
-        return response.text ?? "";
-      } catch (error) {
-        if (isRateLimitError(error)) throw error;
-        lastError = error;
-      }
-    }
-    throw lastError;
-  }
+  const userContents: GeminiContent[] = [{ role: "user", parts: [{ text: userPrompt }] }];
 
   try {
-    const message = await callGemini(userPrompt);
-    return new Response(JSON.stringify({ message }), {
+    const data = await callWithRetry(apiKey, userContents, wikipediaSummary === null);
+
+    const functionCall = extractFunctionCall(data);
+    if (functionCall) {
+      const toolResult = await executeTool(functionCall.name, functionCall.args);
+      const toolContents: GeminiContent[] = [
+        ...userContents,
+        { role: "model", parts: [{ functionCall: { name: functionCall.name, args: functionCall.args } }] },
+        { role: "user", parts: [{ functionResponse: { name: functionCall.name, response: { output: toolResult } } }] },
+      ];
+      const followUp = await callGeminiAPI(apiKey, toolContents, false);
+      return new Response(JSON.stringify({ message: extractText(followUp) }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ message: extractText(data) }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

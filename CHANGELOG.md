@@ -5,6 +5,13 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-05-21
+
+### Corrigé
+
+- `api/gemini.ts` — réécriture complète via l'API REST Gemini avec `fetch` natif (suppression de `@google/genai` côté Edge Function) : le SDK npm n'est pas compatible avec le Vercel Edge Runtime et provoquait un 502 en production
+- `api/tools/wikipedia.ts` — déclaration du tool convertie en JSON brut (suppression de l'import `Type` de `@google/genai`)
+
 ## [1.0.1] - 2026-05-21
 
 ### Fix

@@ -1,12 +1,12 @@
-import { Type } from "@google/genai";
+// Pas d'import @google/genai — déclaration en JSON brut compatible Gemini REST API et Edge Runtime
 
 export const declaration = {
   name: "getWikipediaSummary",
   description: "Récupère le résumé Wikipedia en français d'un lieu",
   parameters: {
-    type: Type.OBJECT,
+    type: "OBJECT",
     properties: {
-      title: { type: Type.STRING, description: "Nom du lieu à rechercher sur Wikipedia" },
+      title: { type: "STRING", description: "Nom du lieu à rechercher sur Wikipedia" },
     },
     required: ["title"],
   },
