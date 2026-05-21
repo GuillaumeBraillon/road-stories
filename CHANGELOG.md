@@ -5,6 +5,22 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-05-21
+
+-Add Google Places integration and end-to-end tooling support for Gemini function calls, plus UI and types updates.
+
+-Key changes:
+
+- Add places service (src/services/places.ts) with formatPriceLevel and getPlaceDetails implementing an 8s AbortController timeout, robust error handling (404→null, network/abort→null, log other HTTP errors), and debug logging. Uses internal /api/places.
+- Introduce agent tools (src/services/agentTools.ts): register getWikipediaSummary and new getPlaceDetails tool, return human-readable tool output, export tool declarations and a safe executeToolCall with error logging.
+- Update Gemini flow (src/services/gemini.ts): extract prompts to new prompts module, handle functionCalls, run tools, feed tool responses back to Gemini, collect toolsUsed, add retry logic and token logging, and return GeminiResult { message, toolsUsed } in dev path; server path expects same shape.
+- Move system/user prompt generation into new prompts file (src/services/prompts.ts).
+- Track used tools across the app: add toolsUsed to GeminiResult and PoiHistoryEntry types (src/types/index.ts), update hook useRoadStories to manage currentToolsUsed and persist toolsUsed in history (src/hooks/useRoadStories.ts), update storage loader to migrate older entries and populate toolsUsed (src/services/storage.ts).
+- UI: display tool badges in App (src/App.tsx) using a new ToolBadges component and show badges per history entry/current message.
+- Update specs (specs/road-stories-places.md) to reflect API usage, PlaceResult shape and getPlaceDetails behavior.
+
+- These changes enable calling and tracking external tool usage safely, keep Places failures non-blocking, and surface which tools contributed to generated messages in the UI.
+
 ## [1.0.5] - 2026-05-21
 
 ### Modifié

@@ -1,17 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 import type { Content, FunctionCall, GenerateContentResponse } from "@google/genai";
 import { executeToolCall, toolDeclarations } from "./agentTools";
+import { SYSTEM_PROMPT, buildUserPrompt } from "./prompts"; // On importe les prompts d'ici !
 import { logger } from "./logger";
-
-// Instanciation différée — uniquement en dev (la clé n'existe pas en production)
-let _ai: GoogleGenAI | null = null;
-function getAI(): GoogleGenAI {
-  if (!_ai) _ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
-  return _ai;
-}
-//Gemini 2.5 Flash : 'gemini-2.5-flash'
-//Gemini 3.1 Flash Lite : 'gemini-3.1-flash-lite'
-const GEMINI_MODEL = "gemini-3.1-flash-lite";
+import type { GeminiResult } from "../types";
 
 export interface GenerateMessageParams {
   poiName: string;
@@ -19,109 +11,40 @@ export interface GenerateMessageParams {
   poiTags: Record<string, string>;
 }
 
-const SYSTEM_PROMPT = `Tu es un guide culturel pour automobilistes sur route ou autoroute.
-Génère un message audio de maximum 30 secondes (environ 60 mots).
-Le message doit être factuel, oral et naturel — jamais encyclopédique.
-Commence le message en nommant le lieu de façon variée. Utilise uniquement des formulations spatiales génériques (pas de "sur votre droite", "vous longez", "derrière vous" — la position exacte est inconnue au moment de la lecture). Exemples d'introductions possibles (ne te limite pas à celles-ci) :
-- "Dans ce secteur, le Pont du Gard..."
-- "Non loin d'ici, l'abbaye de..."
-- "Ce territoire est marqué par..."
-- "Fondée au XIIe siècle, l'abbaye de..."
-- "Ici se dresse le château de..."
-- "À proximité, les ruines de..."
-Ne commence jamais deux messages consécutifs par la même formule.
-Donne une information concrète ou une anecdote marquante sur le lieu.
-Ne pose pas de question. Ne conclus pas par une formule de style. Reste factuel jusqu'au bout.
-Si tu utilises l'outil Wikipedia et qu'il retourne "Non disponible", génère le message sans Wikipedia — ne rappelle pas l'outil une seconde fois.
-Si les informations disponibles sont "Non disponible", appuie-toi sur les tags OSM pour caractériser le lieu. Ne génère jamais de détails historiques ou géographiques précis sur un lieu que tu ne peux pas identifier avec certitude depuis les coordonnées GPS et les tags fournis.
-Réponds uniquement avec le texte à lire à voix haute.`;
+//Gemini 2.5 Flash : 'gemini-2.5-flash'
+//Gemini 3.1 Flash Lite : 'gemini-3.1-flash-lite'
+const GEMINI_MODEL = "gemini-3.1-flash-lite";
+const RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
 
-const CULTURAL_TAG_PREFIXES = [
-  "historic",
-  "tourism",
-  "natural",
-  "amenity",
-  "religion",
-  "denomination",
-  "heritage",
-  "monument",
-  "ruins",
-  "castle_type",
-  "site_type",
-  "start_date",
-  "end_date",
-  "description",
-  "inscription",
-  "information",
-  "operator",
-  "ele",
-  "height",
-];
-
-function buildUserPrompt(poiName: string, coords: { lat: number; lng: number }, poiTags: Record<string, string>): string {
-  const relevantTags = Object.entries(poiTags)
-    .filter(([k]) => CULTURAL_TAG_PREFIXES.some((prefix) => k === prefix || k.startsWith(prefix + ":")))
-    .map(([k, v]) => `${k}=${v}`)
-    .join(", ");
-
-  if (poiTags["inscription"] === poiName) {
-    return `Un monument se trouve à proximité — coordonnées GPS : ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}
-Tags OSM : ${relevantTags || "aucun"}
-Ce monument porte l'inscription gravée : "${poiName}"
-Traduis et explique cette inscription en 2-3 phrases orales naturelles. Ne nomme pas le monument — concentre-toi sur ce que signifie l'inscription.
-Génère le message.`;
-  }
-
-  return `Lieu : ${poiName}
-Coordonnées GPS : ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}
-Tags OSM : ${relevantTags || "aucun"}
-Génère le message.`;
+let _ai: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI {
+  if (!_ai) _ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+  return _ai;
 }
 
 function logTokens(response: GenerateContentResponse): void {
   const meta = response.usageMetadata;
   if (!meta) return;
-  logger.debug("gemini", `Tokens prompt : ${meta.promptTokenCount}`);
-  logger.debug("gemini", `Tokens réponse : ${meta.candidatesTokenCount}`);
-  logger.debug("gemini", `Total : ${meta.totalTokenCount}`);
-}
-
-const RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
-
-function isRateLimitError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes("429");
+  logger.debug("gemini", `Tokens prompt : ${meta.promptTokenCount} | Réponse : ${meta.candidatesTokenCount} | Total : ${meta.totalTokenCount}`);
 }
 
 async function generateWithRetry(
   params: Parameters<InstanceType<typeof GoogleGenAI>["models"]["generateContent"]>[0]
 ): ReturnType<InstanceType<typeof GoogleGenAI>["models"]["generateContent"]> {
-  const systemInstruction = params.config?.systemInstruction;
-  logger.debug("gemini", "=== System prompt ===\n" + (typeof systemInstruction === "string" ? systemInstruction : JSON.stringify(systemInstruction, null, 2)));
-  logger.debug("gemini", "=== User prompt ===\n" + (typeof params.contents === "string" ? params.contents : JSON.stringify(params.contents, null, 2)));
-
   let lastError: unknown;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
-    if (attempt > 0) {
-      const delay = RETRY_DELAYS_MS[attempt - 1];
-      logger.debug("gemini", `Retry ${attempt} après ${delay}ms...`);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1]));
     try {
       return await getAI().models.generateContent(params);
     } catch (error) {
-      if (isRateLimitError(error)) throw error; // 429 : pas de retry, laisser le prochain tick réessayer
+      if (error instanceof Error && error.message.includes("429")) throw error; // Rate limit immédiat
       lastError = error;
     }
   }
   throw lastError;
 }
 
-async function handleFunctionCall(call: FunctionCall): Promise<string> {
-  return executeToolCall(call);
-}
-
-export async function generateRoadMessage(params: GenerateMessageParams): Promise<string> {
-  // En production, la clé API est protégée côté serveur — le navigateur appelle /api/gemini
+export async function generateRoadMessage(params: GenerateMessageParams): Promise<GeminiResult> {
   if (!import.meta.env.DEV) {
     const response = await fetch("/api/gemini", {
       method: "POST",
@@ -129,21 +52,18 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
       body: JSON.stringify(params),
     });
     if (!response.ok) throw new Error(`Gemini Edge Function error: ${response.status}`);
-    const data = (await response.json()) as { message: string };
-    return data.message;
+    return (await response.json()) as GeminiResult; // Ton API devra renvoyer le format { message, toolsUsed }
   }
 
-  // En dev local : appel direct avec VITE_GEMINI_API_KEY (jamais committé, jamais déployé)
   const { poiName, coords, poiTags } = params;
   const userPrompt = buildUserPrompt(poiName, coords, poiTags);
+  const toolsUsed: string[] = []; // On initialise le suivi des outils
 
+  // 1er Tour d'appel à Gemini
   const response = await generateWithRetry({
     model: GEMINI_MODEL,
     contents: userPrompt,
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      tools: [toolDeclarations],
-    },
+    config: { systemInstruction: SYSTEM_PROMPT, tools: [toolDeclarations] },
   });
 
   logTokens(response);
@@ -151,33 +71,27 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
   const functionCalls = response.functionCalls;
   if (functionCalls && functionCalls.length > 0) {
     const calls = functionCalls;
-    const toolResults = await Promise.all(calls.map((call) => handleFunctionCall(call)));
+
+    // On enregistre les outils qui vont être exécutés
+    calls.forEach((c) => {
+      if (c.name) if (!toolsUsed.includes(c.name)) toolsUsed.push(c.name);
+    });
+
+    const toolResults = await Promise.all(calls.map((call: FunctionCall) => executeToolCall(call)));
 
     logger.debug(
       "gemini",
       `${calls.length} outil(s) appelé(s) :`,
-      calls.map((call) => call.name)
+      calls.map((c: FunctionCall) => c.name)
     );
 
     const contents: Content[] = [
       { role: "user", parts: [{ text: userPrompt }] },
-      {
-        role: "model",
-        parts: calls.map((call) => ({
-          functionCall: { name: call.name, args: call.args, id: call.id },
-        })),
-      },
-      {
-        role: "user",
-        parts: calls.map((call, index) => ({
-          functionResponse: {
-            name: call.name,
-            response: { output: toolResults[index] },
-          },
-        })),
-      },
+      { role: "model", parts: calls.map((c: FunctionCall) => ({ functionCall: { name: c.name, args: c.args, id: c.id } })) },
+      { role: "user", parts: calls.map((c: FunctionCall, i: number) => ({ functionResponse: { name: c.name, response: { output: toolResults[i] } } })) },
     ];
 
+    // 2e Tour d'appel (avec les résultats des outils)
     const finalResponse = await generateWithRetry({
       model: GEMINI_MODEL,
       contents,
@@ -185,8 +99,14 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
     });
 
     logTokens(finalResponse);
-    return finalResponse.text ?? "";
+    return {
+      message: finalResponse.text ?? "",
+      toolsUsed,
+    };
   }
 
-  return response.text ?? "";
+  return {
+    message: response.text ?? "",
+    toolsUsed: [],
+  };
 }

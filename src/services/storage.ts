@@ -14,14 +14,15 @@ export function loadHistory(): PoiHistoryEntry[] {
       poiId?: string;
       poiName: string;
       message: string;
-      source: "gemini" | "wiki+gemini";
+      toolsUsed?: string[];
+      source?: "gemini" | "wiki+gemini";
       timestamp: string;
     }>;
     return parsed.map((e) => ({
       poiId: e.poiId ?? "",
       poiName: e.poiName,
       message: e.message,
-      source: e.source,
+      toolsUsed: Array.isArray(e.toolsUsed) ? e.toolsUsed : e.source === "wiki+gemini" ? ["getWikipediaSummary"] : [],
       timestamp: new Date(e.timestamp),
     }));
   } catch {

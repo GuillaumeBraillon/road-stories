@@ -17,7 +17,7 @@ export function useRoadStories(
   status: AppStatus;
   currentPOIName: string | null;
   currentMessage: string | null;
-  currentMessageSource: "gemini" | "wiki+gemini" | null;
+  currentToolsUsed: string[];
   isMuted: boolean;
   setIsMuted: (value: boolean) => void;
   history: PoiHistoryEntry[];
@@ -27,7 +27,7 @@ export function useRoadStories(
   const [activeStatus, setActiveStatus] = useState<Exclude<AppStatus, "idle">>("listening");
   const [currentPOIName, setCurrentPOIName] = useState<string | null>(null);
   const [currentMessage, setCurrentMessage] = useState<string | null>(null);
-  const [currentMessageSource, setCurrentMessageSource] = useState<"gemini" | "wiki+gemini" | null>(null);
+  const [currentToolsUsed, setCurrentToolsUsed] = useState<string[]>([]);
   const [isMuted, setIsMuted] = useState(false);
   const [history, setHistory] = useState<PoiHistoryEntry[]>(loadHistory);
 
@@ -160,7 +160,7 @@ export function useRoadStories(
         setCurrentPOIName(newPOI.name);
 
         logger.debug("tick", "Gemini...");
-        const message = await generateRoadMessage({
+        const { message, toolsUsed } = await generateRoadMessage({
           poiName: newPOI.name,
           coords: { lat: newPOI.lat, lng: newPOI.lng },
           poiTags: newPOI.tags,
@@ -168,9 +168,9 @@ export function useRoadStories(
         logger.debug("tick", "Message :", message);
 
         triggeredPOIs.current.add(newPOI.id);
-        setHistory((prev) => [{ poiId: newPOI.id, poiName: newPOI.name, message, source: "gemini", timestamp: new Date() }, ...prev]);
+        setHistory((prev) => [{ poiId: newPOI.id, poiName: newPOI.name, message, toolsUsed, timestamp: new Date() }, ...prev]);
         setCurrentMessage(message);
-        setCurrentMessageSource("gemini");
+        setCurrentToolsUsed(toolsUsed);
         setActiveStatus("speaking");
         if (!isMutedRef.current) {
           await speak(message);
@@ -187,7 +187,7 @@ export function useRoadStories(
           // En mode muet : conserver le message affiché jusqu'au prochain POI
           if (!isMutedRef.current) {
             setCurrentMessage(null);
-            setCurrentMessageSource(null);
+            setCurrentToolsUsed([]);
           }
         }
       }
@@ -201,7 +201,7 @@ export function useRoadStories(
       clearInterval(intervalId);
       stop();
       setCurrentMessage(null);
-      setCurrentMessageSource(null);
+      setCurrentToolsUsed([]);
       wakeLock?.release().catch(() => {});
     };
   }, [isActive, settings]);
@@ -214,5 +214,5 @@ export function useRoadStories(
     });
   }
 
-  return { isActive, setIsActive, status, currentPOIName, currentMessage, currentMessageSource, isMuted, setIsMuted, history, deleteHistoryEntry };
+  return { isActive, setIsActive, status, currentPOIName, currentMessage, currentToolsUsed, isMuted, setIsMuted, history, deleteHistoryEntry };
 }

@@ -158,6 +158,26 @@ function flattenThemes(groups: ThemeGroup[]): Theme[] {
   return groups.flatMap((g) => g.subThemes);
 }
 
+function ToolBadges({ tools }: { tools: string[] | undefined }) {
+  if (!tools || tools.length === 0) {
+    return <span className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">Gemini brut</span>;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">Gemini</span>
+      {tools.includes("getWikipediaSummary") && (
+        <span className="text-xs bg-blue-900/40 text-blue-300 border border-blue-800/60 px-2 py-0.5 rounded-full flex items-center gap-1">📚 Wikipedia</span>
+      )}
+      {tools.includes("getPlaceDetails") && (
+        <span className="text-xs bg-emerald-900/40 text-emerald-300 border border-emerald-800/60 px-2 py-0.5 rounded-full flex items-center gap-1">
+          ✨ Google Places
+        </span>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [themeGroups, setThemeGroups] = useState<ThemeGroup[]>(() => loadThemeGroups(DEFAULT_THEME_GROUPS));
   const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
@@ -179,8 +199,10 @@ function App() {
   const activeThemeCount = allThemes.filter((t) => t.enabled).length;
   const totalThemeCount = allThemes.length;
 
-  const { isActive, setIsActive, status, currentPOIName, currentMessage, currentMessageSource, isMuted, setIsMuted, history, deleteHistoryEntry } =
-    useRoadStories(flattenThemes(themeGroups), settings);
+  const { isActive, setIsActive, status, currentPOIName, currentMessage, currentToolsUsed, isMuted, setIsMuted, history, deleteHistoryEntry } = useRoadStories(
+    flattenThemes(themeGroups),
+    settings
+  );
 
   function handleThemeToggle(themeId: string) {
     setThemeGroups((prev) =>
@@ -250,9 +272,8 @@ function App() {
         <div className="w-full max-w-sm bg-gray-800 rounded-xl p-4 flex flex-col gap-2">
           {currentPOIName && <p className="text-gray-400 text-xs font-medium uppercase tracking-wide">{currentPOIName}</p>}
           <p className="text-white text-sm leading-relaxed">{currentMessage}</p>
-          <div className="flex items-center gap-1.5 self-end">
-            {currentMessageSource === "wiki+gemini" && <span className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">Wikipedia</span>}
-            <span className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">Gemini</span>
+          <div className="self-end mt-1">
+            <ToolBadges tools={currentToolsUsed} />
           </div>
         </div>
       )}
@@ -346,10 +367,7 @@ function App() {
                   </div>
                   <p className="text-white text-sm leading-relaxed">{entry.message}</p>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      {entry.source === "wiki+gemini" && <span className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">Wikipedia</span>}
-                      <span className="text-xs bg-gray-700 text-gray-400 px-2 py-0.5 rounded-full">Gemini</span>
-                    </div>
+                    <ToolBadges tools={entry.toolsUsed} />
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => {

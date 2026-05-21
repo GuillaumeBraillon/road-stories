@@ -207,35 +207,50 @@ En cas d'erreur Google, inclure le détail de la réponse HTTP dans le message p
 **Prompt Copilot :**
 
 ```text
-Toujours appeler /api/places — jamais directement l'API Google
+Toujours appeler l'API interne /api/places — jamais directement l'API Google.
+
 Exporter l'interface PlaceResult (utilisée aussi dans gemini.ts) :
 {
-rating: number | null
-userRatingCount: number | null
-isOpenNow: boolean | null
-todayHours: string | null
-priceLevel: string | null
-topReview: string | null
-address: string | null
-types: string[] | null,
-googleMapsUri: string | null,
-websiteUri: string | null,
+  rating: number | null
+  userRatingCount: number | null
+  isOpenNow: boolean | null
+  todayHours: string | null
+  priceLevel: string | null // Contiendra l'enum brut de Google (ex: "PRICE_LEVEL_MODERATE")
+  topReview: string | null
+  address: string | null
+  types: string[] | null
+  googleMapsUri: string | null
+  websiteUri: string | null
 }
+
 Exporter la fonction formatPriceLevel(priceLevel: string | null): string | null
-"PRICE_LEVEL_FREE" → "Entrée gratuite"
-"PRICE_LEVEL_INEXPENSIVE" → "Peu coûteux"
-"PRICE_LEVEL_MODERATE" → "Prix modérés"
-"PRICE_LEVEL_EXPENSIVE" → "Entrée payante"
-"PRICE_LEVEL_VERY_EXPENSIVE" → "Entrée très coûteuse"
-null ou inconnu → null
-Exporter la fonction getPlaceDetails(name, lat, lng): Promise<PlaceResult | null>
-- GET /api/places?name=<name>&lat=<lat>&lng=<lng>
-- Timeout 8 secondes via AbortController
-- Si réponse 404 → retourner null (lieu non trouvé, comportement normal)
-- Si erreur réseau ou AbortError → retourner null
-- Si autre erreur HTTP (500, 502) → logger l'erreur et retourner null
-(ne pas propager — un échec Places ne doit pas bloquer la génération du message)
-- Logger le résultat : logger.debug("places", result)
+- "PRICE_LEVEL_FREE" → "Entrée gratuite"
+- "PRICE_LEVEL_INEXPENSIVE" → "Peu coûteux"
+- "PRICE_LEVEL_MODERATE" → "Prix modérés"
+- "PRICE_LEVEL_EXPENSIVE" → "Entrée payante"
+- "PRICE_LEVEL_VERY_EXPENSIVE" → "Entrée très coûteuse"
+- Si null, absent ou inconnu → retourner null
+
+Exporter la fonction asynchrone getPlaceDetails(name: string, lat: number, lng: number): Promise<PlaceResult | null>
+
+CONSTRUCTION DE LA REQUÊTE
+- Méthode : GET
+- URL cible : `/api/places?name=${encodeURIComponent(name)}&lat=${lat}&lng=${lng}`
+
+GESTION DU TIMEOUT & ABORT
+- Mettre en place un timeout strict de 8 secondes (8000ms) en utilisant un AbortController combiné à un setTimeout.
+- Si le fetch met plus de 8 secondes, appeler controller.abort().
+
+GESTION DES ERREURS (ZÉRO CRASH)
+- Encapsuler l'appel fetch dans un bloc try/catch global.
+- Si la réponse HTTP a un statut 404 (Lieu non trouvé) → retourner null (comportement normal).
+- Si l'erreur interceptée est une AbortError (Timeout) ou une erreur réseau (fetch échoué) → retourner null.
+- Si la réponse HTTP a un autre statut d'erreur (ex: 500, 502) → logger l'erreur via un outil de log adapté et retourner null.
+- Règle absolue : un échec de l'API Places ne doit jamais propager d'exception ni bloquer le flux de l'application.
+
+LOGGING & RETOUR
+- Ne PAS appliquer formatPriceLevel dans getPlaceDetails, laisser le priceLevel brut de l'API.
+- Si la réponse est valide (200 OK), parser le JSON, logger le résultat en mode debug et retourner le résultat typé en PlaceResult.
 ```
 
 ---

@@ -28,7 +28,7 @@ export type PoiHistoryEntry = {
   poiId: string;
   poiName: string;
   message: string;
-  source: "gemini" | "wiki+gemini";
+  toolsUsed: string[];
   timestamp: Date;
 };
 
@@ -146,6 +146,11 @@ export interface PlacesToolDeclaration {
     };
     required: ["name", "lat", "lng"];
   };
+}
+
+export interface GeminiResult {
+  message: string;
+  toolsUsed: string[]; // contiendra ex: ['getWikipediaSummary', 'getPlaceDetails']
 }
 
 export type GetPlaceDetails = (name: string, lat: number, lng: number) => Promise<PlaceResult | null>;
