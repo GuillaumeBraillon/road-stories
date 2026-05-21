@@ -5,6 +5,24 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2026-05-21
+
+### Ajouté
+
+- `api/tools/places.ts` — outil Edge `getPlaceDetails` pour rendre Google Places disponible en production dans le registre d'outils Gemini.
+- `api/gemini.ts` — pré-fetch Google Places côté production, aligné avec le comportement local.
+
+### Modifié
+
+- `api/gemini.ts` — réutilisation du prompt partagé (`src/services/prompts.ts`) côté production pour réduire les écarts local/prod.
+- `api/gemini.ts` — alignement du contrat serveur pour renvoyer `{ message, toolsUsed }` et associer les `functionResponse` à leur `id` quand Gemini le fournit.
+- `api/tools/index.ts` — enregistrement de `getPlaceDetails` aux côtés de `getWikipediaSummary` dans les tools disponibles en production.
+- `api/tools/places.ts` — lecture autonome de `GOOGLE_PLACES_API_KEY` côté Edge, avec fallback local `VITE_GOOGLE_PLACES_API_KEY` et erreur de configuration explicite si la clé manque.
+
+### Corrigé
+
+- `api/gemini.ts` — correction de l'écart local/prod où la production se limitait à Gemini/Wikipedia car Google Places n'était pas exposé dans le registre d'outils Edge.
+
 ## [1.0.7] - 2026-05-21
 
 ### Ajouté
@@ -18,7 +36,6 @@ et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.
 - `src/services/prompts.ts` — rendu des tags OpenStreetMap sous forme de liste textuelle explicite (`- clé: valeur`) au lieu d'une ligne compacte, plus lisible pour les modèles légers.
 - `src/services/gemini.ts` — conservation des `functionCall` bruts renvoyés par Gemini au second tour, avec `id` et métadonnées internes, pour fiabiliser les réponses après appels d'outils.
 - `src/services/gemini.ts` — fusion de `toolsUsed` détecté côté code avec `actualToolsUsed` renvoyé par Gemini dans la réponse JSON structurée.
-- `api/gemini.ts` — alignement du contrat serveur pour renvoyer `{ message, toolsUsed }` et associer les `functionResponse` à leur `id` quand Gemini le fournit.
 
 ### Corrigé
 
