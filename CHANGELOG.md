@@ -5,6 +5,10 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-05-21
+
+- Update Copilot instructions and examples to use gemini-3.1-flash-lite instead of gemini-2.5-flash. Add .vercel to .gitignore and introduce a new npm script "dev:vercel" to run vercel dev with .env.local loaded. Add a CHANGELOG entry for 1.0.3 (Vercel server config). Rename specs/road-stories-places-v3.md to specs/road-stories-places.md and add a new snapshot spec (specs/snapshot on v1.0.2.md) describing v1.0.2 runtime behavior.
+
 ## [1.0.2] - 2026-05-21
 
 ### Corrigé

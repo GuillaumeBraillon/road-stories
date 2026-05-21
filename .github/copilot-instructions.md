@@ -90,7 +90,7 @@ export type AppStatus = "idle" | "active" | "speaking";
 ## Gemini — Agent IA
 
 **Package** : `@google/genai`
-**Modèle** : `gemini-2.5-flash`
+**Modèle** : `gemini-3.1-flash-lite`
 **Clé API** : `import.meta.env.VITE_GEMINI_API_KEY`
 
 ### Initialisation
@@ -104,7 +104,7 @@ const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
 ```typescript
 const response = await ai.models.generateContent({
-  model: "gemini-2.5-flash",
+  model: "gemini-3.1-flash-lite",
   contents: prompt,
   config: {
     tools: [outilWikipedia],
