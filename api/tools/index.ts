@@ -1,7 +1,8 @@
 import * as wikipedia from "./wikipedia";
+import * as places from "./places";
 
 // Pour ajouter un nouveau tool : créer un fichier dans ce dossier et l'importer ici
-export const TOOLS = [wikipedia];
+export const TOOLS = [wikipedia, places];
 
 export const toolDeclarations = {
   functionDeclarations: TOOLS.map((t) => t.declaration),

@@ -8,48 +8,10 @@
 export const config = { runtime: "edge" };
 
 import { toolDeclarations, executeTool } from "./tools/index";
+import { SYSTEM_PROMPT, buildUserPrompt } from "../src/services/prompts";
 
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-
-const SYSTEM_PROMPT = `Tu es un guide culturel pour automobilistes sur route ou autoroute.
-Génère un message audio de maximum 30 secondes (environ 60 mots).
-Le message doit être factuel, oral et naturel — jamais encyclopédique.
-Commence le message en nommant le lieu de façon variée. Utilise uniquement des formulations spatiales génériques (pas de "sur votre droite", "vous longez", "derrière vous" — la position exacte est inconnue au moment de la lecture). Exemples d'introductions possibles (ne te limite pas à celles-ci) :
-- "Dans ce secteur, le Pont du Gard..."
-- "Non loin d'ici, l'abbaye de..."
-- "Ce territoire est marqué par..."
-- "Fondée au XIIe siècle, l'abbaye de..."
-- "Ici se dresse le château de..."
-- "À proximité, les ruines de..."
-Ne commence jamais deux messages consécutifs par la même formule.
-Donne une information concrète ou une anecdote marquante sur le lieu.
-Ne pose pas de question. Ne conclus pas par une formule de style. Reste factuel jusqu'au bout.
-Si tu utilises l'outil Wikipedia et qu'il retourne "Non disponible", génère le message sans Wikipedia — ne rappelle pas l'outil une seconde fois.
-Si les informations disponibles sont "Non disponible", appuie-toi sur les tags OSM pour caractériser le lieu. Ne génère jamais de détails historiques ou géographiques précis sur un lieu que tu ne peux pas identifier avec certitude depuis les coordonnées GPS et les tags fournis.
-Réponds uniquement avec le texte à lire à voix haute.`;
-
-const CULTURAL_TAG_PREFIXES = [
-  "historic",
-  "tourism",
-  "natural",
-  "amenity",
-  "religion",
-  "denomination",
-  "heritage",
-  "monument",
-  "ruins",
-  "castle_type",
-  "site_type",
-  "start_date",
-  "end_date",
-  "description",
-  "inscription",
-  "information",
-  "operator",
-  "ele",
-  "height",
-];
 
 interface GenerateMessageParams {
   poiName: string;
@@ -69,30 +31,20 @@ interface GeminiApiResponse {
   error?: { code: number; message: string };
 }
 
-function buildUserPrompt(poiName: string, coords: { lat: number; lng: number }, poiTags: Record<string, string>): string {
-  const relevantTags = Object.entries(poiTags)
-    .filter(([k]) => CULTURAL_TAG_PREFIXES.some((prefix) => k === prefix || k.startsWith(prefix + ":")))
-    .map(([k, v]) => `${k}=${v}`)
-    .join(", ");
-
-  if (poiTags["inscription"] === poiName) {
-    return `Un monument se trouve à proximité — coordonnées GPS : ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}
-Tags OSM : ${relevantTags || "aucun"}
-Ce monument porte l'inscription gravée : "${poiName}"
-Traduis et explique cette inscription en 2-3 phrases orales naturelles. Ne nomme pas le monument — concentre-toi sur ce que signifie l'inscription.
-Génère le message.`;
-  }
-
-  return `Lieu : ${poiName}
-Coordonnées GPS : ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}
-Tags OSM : ${relevantTags || "aucun"}
-Génère le message.`;
-}
-
 function extractText(data: GeminiApiResponse): string {
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   const textPart = parts.find((p): p is { text: string } => "text" in p);
   return textPart?.text ?? "";
+}
+
+function isUsefulToolResult(result: string | undefined): result is string {
+  if (!result) return false;
+  return (
+    result !== "Non disponible" &&
+    result !== "Informations Google Places non disponibles pour ce lieu" &&
+    !result.startsWith("Erreur") &&
+    !result.startsWith("Arguments manquants")
+  );
 }
 
 async function callGeminiAPI(apiKey: string, contents: GeminiContent[], withTools: boolean): Promise<GeminiApiResponse> {
@@ -156,7 +108,34 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   const { poiName, coords, poiTags } = params;
-  const userPrompt = buildUserPrompt(poiName, coords, poiTags);
+  const toolsUsed: string[] = [];
+  let googlePlacesData = "Non cherché";
+
+  const isEstablishment = !!(poiTags["amenity"] || poiTags["shop"] || poiTags["tourism"] || poiTags["craft"]);
+  if (isEstablishment) {
+    try {
+      const result = await executeTool("getPlaceDetails", { name: poiName, lat: coords.lat, lng: coords.lng });
+      if (isUsefulToolResult(result)) {
+        googlePlacesData = result;
+        toolsUsed.push("getPlaceDetails");
+      } else {
+        googlePlacesData = result || "Non disponible";
+      }
+    } catch {
+      googlePlacesData = "Non disponible";
+    }
+  }
+
+  let userPrompt = buildUserPrompt(poiName, coords, poiTags);
+  userPrompt += `\n\nDonnées Google Places réelles trouvées : ${googlePlacesData}`;
+  userPrompt += "\nNote: Si un avis marquant ou une excellente note est présent, intègre-le de manière naturelle dans ton récit.";
+
+  if (poiTags["tourism"] === "artwork" || poiTags["artwork_type"]) {
+    userPrompt += `\n\nCONSIGNES IMPÉRATIVES POUR CETTE ŒUVRE D'ART :
+- Si le tag 'artist_name' est présent (${poiTags["artist_name"] || "non"}), tu DOIS obligatoirement citer le nom de l'artiste dans ton récit.
+- Si le tag 'material' est présent (${poiTags["material"] || "non"}), tu DOIS obligatoirement mentionner le matériau utilisé (ex: métal, bronze, pierre).`;
+  }
+
   const userContents: GeminiContent[] = [{ role: "user", parts: [{ text: userPrompt }] }];
 
   try {
@@ -170,7 +149,11 @@ export default async function handler(request: Request): Promise<Response> {
 
     if (functionCalls.length > 0) {
       const toolResults = await Promise.all(functionCalls.map((call) => executeTool(call.name, call.args)));
-      const toolsUsed = [...new Set(functionCalls.map((call) => call.name))];
+      functionCalls.forEach((call, index) => {
+        if (call.name && isUsefulToolResult(toolResults[index]) && !toolsUsed.includes(call.name)) {
+          toolsUsed.push(call.name);
+        }
+      });
 
       const toolContents: GeminiContent[] = [
         ...userContents,
@@ -197,7 +180,7 @@ export default async function handler(request: Request): Promise<Response> {
       });
     }
 
-    return new Response(JSON.stringify({ message: extractText(data), toolsUsed: [] }), {
+    return new Response(JSON.stringify({ message: extractText(data), toolsUsed }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
