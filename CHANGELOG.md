@@ -5,6 +5,21 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-05-21
+
+### Modifié
+
+- `api/places.ts` — endpoint proxy migré en `GET /api/places?name=...&lat=...&lng=...` pour exploiter le cache CDN Vercel (`Cache-Control: public, s-maxage=86400, stale-while-revalidate=3600`).
+- `api/places.ts` — suppression du cache mémoire local (`Map`) au profit du cache edge/CDN Vercel basé sur l'URL GET complète.
+- `api/places.ts` — requête Google Places durcie avec `locationRestriction.rectangle` (zone contrainte autour des coordonnées) pour éviter les faux positifs hors zone.
+- `specs/road-stories-places.md` — STEP 1 aligné avec l'implémentation réelle : GET, cache CDN, `locationRestriction`, exemples `curl` mis à jour.
+
+### Corrigé
+
+- `api/places.ts` — extraction de `todayHours` fiabilisée via le jour courant FR (`Intl.DateTimeFormat` + timezone `Europe/Paris`) au lieu d'un index implicite fragile.
+- `api/places.ts` — erreurs upstream Google Places enrichies (corps HTTP inclus dans le message) pour diagnostiquer rapidement les `400` en production.
+- `api/places.ts` — comportement explicite `404 { error: "Place not found" }` conservé et validé pour les recherches sans résultat.
+
 ## [1.0.4] - 2026-05-21
 
 ### Ajouté
