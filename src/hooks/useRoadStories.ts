@@ -124,15 +124,47 @@ export function useRoadStories(
         // Tags qui apportent du contenu réel au-delà de la simple classification OSM.
         // Pré-filtrage synchrone : on saute immédiatement les POIs sans contenu exploitable
         // plutôt qu'attendre le prochain tick de 30 secondes.
+        // Tags qui apportent du contenu réel au-delà de la simple classification OSM.
+        // Tags textuels OSM d'origine
         const ENRICHING_TAGS = ["description", "inscription", "heritage", "castle_type", "site_type", "denomination", "religion", "ele", "height", "wikidata"];
+
+        // Catégories prioritaires pour lesquelles Gemini peut utiliser ses outils (Wikipedia / Google Places)
+        const TOOL_SUPPORTED_CATEGORIES = new Set(["museum", "theatre", "artwork", "castle", "monument", "attraction", "arts_centre"]);
+
         let newPOI: POI | undefined;
+
         for (const poi of pois) {
           if (triggeredPOIs.current.has(poi.id)) continue;
-          if (!ENRICHING_TAGS.some((key) => poi.tags[key])) {
-            logger.debug("tick", "POI ignoré (contexte insuffisant) :", poi.name);
+
+          // 1. GARDE-FOU ANTI-POLLUTION (Exclusion des panneaux administratifs et règles de parcs)
+          const isGuidepost = poi.tags["information"] === "guidepost";
+          const isRuleBoard = poi.tags["information"] === "board" && poi.tags["board_type"] === "rules";
+          const inscriptionText = (poi.tags["inscription"] || "").toLowerCase();
+          const hasRuleKeywords =
+            inscriptionText.includes("destinée aux enfants") || inscriptionText.includes("interdit aux") || inscriptionText.includes("règlement");
+
+          if (isGuidepost || isRuleBoard || hasRuleKeywords) {
+            logger.debug("tick", "POI ignoré (panneau administratif) :", poi.name || "Sans nom");
             triggeredPOIs.current.add(poi.id);
             continue;
           }
+
+          // 2. VÉRIFICATION DU CONTEXTE (OSM ou Outils Gemini)
+          const hasEnrichingTag = ENRICHING_TAGS.some((key) => poi.tags[key]);
+
+          // Est-ce que le POI appartient à une catégorie gérée par nos outils ?
+          const isEligibleForTools =
+            TOOL_SUPPORTED_CATEGORIES.has(poi.tags["tourism"] || "") ||
+            TOOL_SUPPORTED_CATEGORIES.has(poi.tags["amenity"] || "") ||
+            TOOL_SUPPORTED_CATEGORIES.has(poi.tags["historic"] || "");
+
+          // On valide le POI s'il a des tags riches OSM OU s'il est éligible à une recherche Wikipedia/Places
+          if (!hasEnrichingTag && !isEligibleForTools) {
+            logger.debug("tick", "POI ignoré (contexte insuffisant et non éligible aux outils) :", poi.name);
+            triggeredPOIs.current.add(poi.id);
+            continue;
+          }
+
           newPOI = poi;
           break;
         }
@@ -143,17 +175,7 @@ export function useRoadStories(
           return;
         }
 
-        setCurrentPOIName(newPOI.name);
-        // Les panneaux guidepost sont souvent trop pauvres pour une narration fiable.
-        if (newPOI.tags["information"] === "guidepost") {
-          logger.debug("tick", "POI ignoré (guidepost sans Wikipedia) :", newPOI.name);
-          triggeredPOIs.current.add(newPOI.id);
-          return;
-        }
-
         // À partir d'ici on génère et lit un message.
-        // En mode muet, le mutex n'est pas verrouillé — le tick suivant peut s'enchaîner normalement.
-        // Le POI n'est marqué comme traité qu'après la génération, pour permettre un retry si Gemini échoue.
         isSpeakingRef.current = !isMutedRef.current;
         setActiveStatus("generating");
         didStartSpeaking = true;

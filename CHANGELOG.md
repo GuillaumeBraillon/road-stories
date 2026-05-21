@@ -5,6 +5,27 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-05-21
+
+### Ajouté
+
+- `vite.config.ts` — middleware de développement pour `GET /api/places`, afin d'exécuter `api/places.ts` via Vite sans lancer `vercel dev` et sans erreur de transformation OXC.
+- `src/services/gemini.ts` — pré-fetch automatique de Google Places pour les POI assimilables à des établissements (`amenity`, `shop`, `tourism`, `craft`), avec injection des données réelles dans le prompt Gemini.
+- `src/services/gemini.ts` — validation centralisée des résultats d'outils avant ajout dans `toolsUsed`, pour ne pas afficher de badge quand un outil retourne une absence de données.
+
+### Modifié
+
+- `src/services/prompts.ts` — rendu des tags OpenStreetMap sous forme de liste textuelle explicite (`- clé: valeur`) au lieu d'une ligne compacte, plus lisible pour les modèles légers.
+- `src/services/gemini.ts` — conservation des `functionCall` bruts renvoyés par Gemini au second tour, avec `id` et métadonnées internes, pour fiabiliser les réponses après appels d'outils.
+- `src/services/gemini.ts` — fusion de `toolsUsed` détecté côté code avec `actualToolsUsed` renvoyé par Gemini dans la réponse JSON structurée.
+- `api/gemini.ts` — alignement du contrat serveur pour renvoyer `{ message, toolsUsed }` et associer les `functionResponse` à leur `id` quand Gemini le fournit.
+
+### Corrigé
+
+- `vite.config.ts` — correction de l'erreur dev `Expected from but found {` lorsque Vite tentait de transformer `api/places.ts?name=...` comme un module frontend.
+- `src/services/gemini.ts` — correction des erreurs Gemini `400 Bad Request` au second appel après tool-use, causées par une reconstruction incomplète des `functionCall`.
+- `src/services/gemini.ts` — correction des badges d'outils trop optimistes : `getWikipediaSummary` et `getPlaceDetails` ne sont plus marqués comme utilisés si leur réponse est vide, indisponible ou en erreur.
+
 ## [1.0.6] - 2026-05-21
 
 -Add Google Places integration and end-to-end tooling support for Gemini function calls, plus UI and types updates.

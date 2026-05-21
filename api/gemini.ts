@@ -60,7 +60,7 @@ interface GenerateMessageParams {
 type GeminiPart =
   | { text: string }
   | { functionCall: { name: string; args: Record<string, unknown> } & Record<string, unknown> }
-  | { functionResponse: { name: string; response: { output: string } } };
+  | { functionResponse: { id?: string; name: string; response: { output: string } } };
 
 type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
 
@@ -170,6 +170,7 @@ export default async function handler(request: Request): Promise<Response> {
 
     if (functionCalls.length > 0) {
       const toolResults = await Promise.all(functionCalls.map((call) => executeTool(call.name, call.args)));
+      const toolsUsed = [...new Set(functionCalls.map((call) => call.name))];
 
       const toolContents: GeminiContent[] = [
         ...userContents,
@@ -182,6 +183,7 @@ export default async function handler(request: Request): Promise<Response> {
           role: "user",
           parts: functionCalls.map((call, index) => ({
             functionResponse: {
+              id: typeof call["id"] === "string" ? call["id"] : undefined,
               name: call.name,
               response: { output: toolResults[index] },
             },
@@ -189,13 +191,13 @@ export default async function handler(request: Request): Promise<Response> {
         },
       ];
       const followUp = await callGeminiAPI(apiKey, toolContents, false);
-      return new Response(JSON.stringify({ message: extractText(followUp) }), {
+      return new Response(JSON.stringify({ message: extractText(followUp), toolsUsed }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    return new Response(JSON.stringify({ message: extractText(data) }), {
+    return new Response(JSON.stringify({ message: extractText(data), toolsUsed: [] }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

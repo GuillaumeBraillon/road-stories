@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import type { Content, FunctionCall, GenerateContentResponse } from "@google/genai";
+import type { Content, FunctionCall, GenerateContentResponse, Part } from "@google/genai";
 import { executeToolCall, toolDeclarations } from "./agentTools";
 import { SYSTEM_PROMPT, buildUserPrompt } from "./prompts"; // On importe les prompts d'ici !
 import { logger } from "./logger";
@@ -28,6 +28,22 @@ function logTokens(response: GenerateContentResponse): void {
   logger.debug("gemini", `Tokens prompt : ${meta.promptTokenCount} | Réponse : ${meta.candidatesTokenCount} | Total : ${meta.totalTokenCount}`);
 }
 
+function hasFunctionCall(part: Part): part is Part & { functionCall: FunctionCall } {
+  return !!part.functionCall;
+}
+
+type FunctionCallPart = Part & { functionCall: FunctionCall };
+
+function isUsefulToolResult(result: string | undefined): result is string {
+  if (!result) return false;
+  return (
+    result !== "Non disponible" &&
+    result !== "Informations Google Places non disponibles pour ce lieu" &&
+    !result.startsWith("Erreur") &&
+    !result.startsWith("Arguments manquants")
+  );
+}
+
 async function generateWithRetry(
   params: Parameters<InstanceType<typeof GoogleGenAI>["models"]["generateContent"]>[0]
 ): ReturnType<InstanceType<typeof GoogleGenAI>["models"]["generateContent"]> {
@@ -38,6 +54,10 @@ async function generateWithRetry(
       return await getAI().models.generateContent(params);
     } catch (error) {
       if (error instanceof Error && error.message.includes("429")) throw error; // Rate limit immédiat
+      if (error instanceof Error && error.message.includes("400")) {
+        logger.error("gemini", "Erreur Gemini 400:", error.message);
+        throw error;
+      }
       lastError = error;
     }
   }
@@ -52,14 +72,44 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
       body: JSON.stringify(params),
     });
     if (!response.ok) throw new Error(`Gemini Edge Function error: ${response.status}`);
-    return (await response.json()) as GeminiResult; // Ton API devra renvoyer le format { message, toolsUsed }
+    return (await response.json()) as GeminiResult;
   }
 
   const { poiName, coords, poiTags } = params;
-  const userPrompt = buildUserPrompt(poiName, coords, poiTags);
-  const toolsUsed: string[] = []; // On initialise le suivi des outils
+  const toolsUsed: string[] = [];
+  let googlePlacesData = "Non cherché";
 
-  // 1er Tour d'appel à Gemini
+  const isEstablishment = !!(poiTags["amenity"] || poiTags["shop"] || poiTags["tourism"] || poiTags["craft"]);
+  if (isEstablishment) {
+    try {
+      const result = await executeToolCall({
+        name: "getPlaceDetails",
+        args: { name: poiName, lat: coords.lat, lng: coords.lng },
+      });
+
+      if (isUsefulToolResult(result)) {
+        googlePlacesData = result;
+        toolsUsed.push("getPlaceDetails");
+      } else {
+        googlePlacesData = result || "Non disponible";
+      }
+    } catch (error) {
+      logger.error("gemini", "Échec du pré-fetch Google Places", error);
+    }
+  }
+
+  let userPrompt = buildUserPrompt(poiName, coords, poiTags);
+  userPrompt += `\n\nDonnées Google Places réelles trouvées : ${googlePlacesData}`;
+  userPrompt += "\nNote: Si un avis marquant ou une excellente note est présent, intègre-le de manière naturelle dans ton récit.";
+
+  // On ajoute une consigne de rigueur incontournable pour les œuvres d'art
+  if (poiTags["tourism"] === "artwork" || poiTags["artwork_type"]) {
+    userPrompt += `\n\n⚠️ CONSIGNES IMPÉRATIVES POUR CETTE ŒUVRE D'ART :
+- Si le tag 'artist_name' est présent (${poiTags["artist_name"] || "non"}), tu DOIS obligatoirement citer le nom de l'artiste dans ton récit.
+- Si le tag 'material' est présent (${poiTags["material"] || "non"}), tu DOIS obligatoirement mentionner le matériau utilisé (ex: métal, bronze, pierre).`;
+  }
+
+  // 1er Tour d'appel à Gemini (Inchangé)
   const response = await generateWithRetry({
     model: GEMINI_MODEL,
     contents: userPrompt,
@@ -70,13 +120,12 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
 
   const functionCalls = response.functionCalls;
   if (functionCalls && functionCalls.length > 0) {
-    const calls = functionCalls;
+    const rawFunctionCallParts = response.candidates?.[0]?.content?.parts?.filter(hasFunctionCall) ?? [];
+    const functionCallParts: FunctionCallPart[] =
+      rawFunctionCallParts.length > 0 ? rawFunctionCallParts : functionCalls.map((call) => ({ functionCall: call }));
+    const calls = functionCallParts.map((part) => part.functionCall);
 
-    // On enregistre les outils qui vont être exécutés
-    calls.forEach((c) => {
-      if (c.name) if (!toolsUsed.includes(c.name)) toolsUsed.push(c.name);
-    });
-
+    // On exécute les outils
     const toolResults = await Promise.all(calls.map((call: FunctionCall) => executeToolCall(call)));
 
     logger.debug(
@@ -85,28 +134,72 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
       calls.map((c: FunctionCall) => c.name)
     );
 
+    calls.forEach((call, index) => {
+      if (call.name && isUsefulToolResult(toolResults[index]) && !toolsUsed.includes(call.name)) {
+        toolsUsed.push(call.name);
+      }
+    });
+
     const contents: Content[] = [
       { role: "user", parts: [{ text: userPrompt }] },
-      { role: "model", parts: calls.map((c: FunctionCall) => ({ functionCall: { name: c.name, args: c.args, id: c.id } })) },
-      { role: "user", parts: calls.map((c: FunctionCall, i: number) => ({ functionResponse: { name: c.name, response: { output: toolResults[i] } } })) },
+      { role: "model", parts: functionCallParts },
+      {
+        role: "user",
+        parts: calls.map((c: FunctionCall, i: number) => ({
+          functionResponse: { id: c.id, name: c.name, response: { output: toolResults[i] } },
+        })),
+      },
     ];
 
-    // 2e Tour d'appel (avec les résultats des outils)
+    // 2e Tour d'appel : On force la réponse en JSON structuré
     const finalResponse = await generateWithRetry({
       model: GEMINI_MODEL,
       contents,
-      config: { systemInstruction: SYSTEM_PROMPT },
+      config: {
+        systemInstruction:
+          SYSTEM_PROMPT +
+          "\nTu dois obligatoirement répondre sous forme d'un objet JSON contenant 'message' et 'actualToolsUsed'. Si les données d'un outil étaient hors-sujet (ex: homonyme), exclus cet outil de la liste.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT",
+          properties: {
+            message: {
+              type: "STRING",
+              description: "Le récit fluide du lieu. Inclus impérativement l'artiste et les matériaux s'ils sont fournis dans les tags OSM.",
+            },
+            actualToolsUsed: {
+              type: "ARRAY",
+              items: { type: "STRING" },
+              description: "Les noms des outils (ex: 'getWikipediaSummary') dont les infos ont été VRAIMENT utiles pour rédiger le message.",
+            },
+          },
+          required: ["message", "actualToolsUsed"],
+        },
+      },
     });
 
     logTokens(finalResponse);
-    return {
-      message: finalResponse.text ?? "",
-      toolsUsed,
-    };
+
+    // Extraction et parsing sécurisé du JSON de Gemini
+    try {
+      const parsedResult = JSON.parse(finalResponse.text ?? "{}");
+      const actualToolsUsed = Array.isArray(parsedResult.actualToolsUsed) ? parsedResult.actualToolsUsed : [];
+      return {
+        message: parsedResult.message ?? "",
+        toolsUsed: [...new Set([...toolsUsed, ...actualToolsUsed])],
+      };
+    } catch (error) {
+      logger.error("gemini", "Erreur lors du parsing JSON de la réponse Gemini, fallback appliqué.", error);
+      // Fallback au cas où le JSON échouerait (très rare avec Flash 3.1)
+      return {
+        message: finalResponse.text ?? "",
+        toolsUsed,
+      };
+    }
   }
 
   return {
     message: response.text ?? "",
-    toolsUsed: [],
+    toolsUsed,
   };
 }
