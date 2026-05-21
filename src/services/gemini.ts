@@ -152,6 +152,19 @@ async function handleFunctionCall(call: FunctionCall, userPrompt: string): Promi
 }
 
 export async function generateRoadMessage(params: GenerateMessageParams): Promise<string> {
+  // En production, la clé API est protégée côté serveur — le navigateur appelle /api/gemini
+  if (!import.meta.env.DEV) {
+    const response = await fetch("/api/gemini", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+    if (!response.ok) throw new Error(`Gemini Edge Function error: ${response.status}`);
+    const data = (await response.json()) as { message: string };
+    return data.message;
+  }
+
+  // En dev local : appel direct avec VITE_GEMINI_API_KEY (jamais committé, jamais déployé)
   const { poiName, coords, poiTags, wikipediaSummary } = params;
   const userPrompt = buildUserPrompt(poiName, coords, poiTags, wikipediaSummary);
 
