@@ -1,4 +1,4 @@
-import type { FormatPriceLevel, GetPlaceDetails, GooglePriceLevel, PlaceResult } from "../types";
+import type { FormatPriceLevel, GetPlaceDetails, GooglePriceLevel, PlaceResult } from "../types/places.types";
 import { logger } from "./logger";
 
 const TIMEOUT_MS = 8_000;

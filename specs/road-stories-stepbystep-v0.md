@@ -206,7 +206,7 @@ C'est ici que l'agent prend vie. Il reçoit les données brutes et génère un m
 // Agent Gemini 2.5 Flash pour générer des messages audio touristiques  
 // Importer { GoogleGenAI, Type } depuis @google/genai  
 // Clé API : import.meta.env.VITE_GEMINI_API_KEY  
-// Modèle : gemini-2.5-flash  
+// Modèle : gemini-3.1-flash-lite  
 // Initialisation :  
 // const ai \= new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY })  
 // Interface en paramètre :  
@@ -232,7 +232,7 @@ C'est ici que l'agent prend vie. Il reçoit les données brutes et génère un m
 // Fonction generateRoadMessage(params: GenerateMessageParams): Promise\<string\>  
 //  
 // Appel avec ai.models.generateContent({  
-// model: 'gemini-2.5-flash',  
+// model: 'gemini-3.1-flash-lite',  
 // contents: le prompt utilisateur,  
 // config: { tools: \[outilWikipedia\], systemInstruction: le system prompt }  
 // })  
@@ -274,7 +274,7 @@ console.log(\`Total : ${meta.totalTokenCount} tokens\`)
 
 **En amont** — `countTokens` pour estimer avant d'envoyer (utile pour les gros contextes) :  
 const resultat \= await ai.models.countTokens({  
- model: 'gemini-2.5-flash',  
+ model: 'gemini-3.1-flash-lite',  
  contents: texteATester,  
 })  
 console.log(\`${resultat.totalTokens} tokens\`)

@@ -1,15 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import type { Content, FunctionCall, GenerateContentResponse, Part } from "@google/genai";
 import { executeToolCall, toolDeclarations } from "./agentTools";
-import { SYSTEM_PROMPT, buildUserPrompt } from "./prompts"; // On importe les prompts d'ici !
+import { SYSTEM_PROMPT } from "./prompts"; // On importe les prompts d'ici !
+import { buildEnrichedUserPrompt, GOOGLE_PLACES_TOOL_NAME, markToolUsedIfUseful, prefetchGooglePlaces } from "./geminiShared";
 import { logger } from "./logger";
-import type { GeminiResult } from "../types";
-
-export interface GenerateMessageParams {
-  poiName: string;
-  coords: { lat: number; lng: number };
-  poiTags: Record<string, string>;
-}
+import type { GeminiResult, GenerateMessageParams } from "../types/gemini.types";
 
 //Gemini 2.5 Flash : 'gemini-2.5-flash'
 //Gemini 3.1 Flash Lite : 'gemini-3.1-flash-lite'
@@ -33,16 +28,6 @@ function hasFunctionCall(part: Part): part is Part & { functionCall: FunctionCal
 }
 
 type FunctionCallPart = Part & { functionCall: FunctionCall };
-
-function isUsefulToolResult(result: string | undefined): result is string {
-  if (!result) return false;
-  return (
-    result !== "Non disponible" &&
-    result !== "Informations Google Places non disponibles pour ce lieu" &&
-    !result.startsWith("Erreur") &&
-    !result.startsWith("Arguments manquants")
-  );
-}
 
 async function generateWithRetry(
   params: Parameters<InstanceType<typeof GoogleGenAI>["models"]["generateContent"]>[0]
@@ -76,38 +61,12 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
   }
 
   const { poiName, coords, poiTags } = params;
-  const toolsUsed: string[] = [];
-  let googlePlacesData = "Non cherché";
-
-  const isEstablishment = !!(poiTags["amenity"] || poiTags["shop"] || poiTags["tourism"] || poiTags["craft"]);
-  if (isEstablishment) {
-    try {
-      const result = await executeToolCall({
-        name: "getPlaceDetails",
-        args: { name: poiName, lat: coords.lat, lng: coords.lng },
-      });
-
-      if (isUsefulToolResult(result)) {
-        googlePlacesData = result;
-        toolsUsed.push("getPlaceDetails");
-      } else {
-        googlePlacesData = result || "Non disponible";
-      }
-    } catch (error) {
-      logger.error("gemini", "Échec du pré-fetch Google Places", error);
-    }
-  }
-
-  let userPrompt = buildUserPrompt(poiName, coords, poiTags);
-  userPrompt += `\n\nDonnées Google Places réelles trouvées : ${googlePlacesData}`;
-  userPrompt += "\nNote: Si un avis marquant ou une excellente note est présent, intègre-le de manière naturelle dans ton récit.";
-
-  // On ajoute une consigne de rigueur incontournable pour les œuvres d'art
-  if (poiTags["tourism"] === "artwork" || poiTags["artwork_type"]) {
-    userPrompt += `\n\n⚠️ CONSIGNES IMPÉRATIVES POUR CETTE ŒUVRE D'ART :
-- Si le tag 'artist_name' est présent (${poiTags["artist_name"] || "non"}), tu DOIS obligatoirement citer le nom de l'artiste dans ton récit.
-- Si le tag 'material' est présent (${poiTags["material"] || "non"}), tu DOIS obligatoirement mentionner le matériau utilisé (ex: métal, bronze, pierre).`;
-  }
+  const { googlePlacesData, toolsUsed } = await prefetchGooglePlaces(
+    { poiName, coords, poiTags },
+    (args) => executeToolCall({ name: GOOGLE_PLACES_TOOL_NAME, args }),
+    (error) => logger.error("gemini", "Échec du pré-fetch Google Places", error)
+  );
+  const userPrompt = buildEnrichedUserPrompt({ poiName, coords, poiTags }, googlePlacesData);
 
   // 1er Tour d'appel à Gemini (Inchangé)
   const response = await generateWithRetry({
@@ -135,9 +94,7 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
     );
 
     calls.forEach((call, index) => {
-      if (call.name && isUsefulToolResult(toolResults[index]) && !toolsUsed.includes(call.name)) {
-        toolsUsed.push(call.name);
-      }
+      markToolUsedIfUseful(toolsUsed, call.name, toolResults[index]);
     });
 
     const contents: Content[] = [

@@ -1,4 +1,10 @@
-import type { GooglePlacesTextSearchRequest, GooglePlacesTextSearchResponse, GooglePriceLevel, GooglePlacesPlace, PlaceResult } from "../../src/types";
+import type {
+  GooglePlacesTextSearchRequest,
+  GooglePlacesTextSearchResponse,
+  GooglePriceLevel,
+  GooglePlacesPlace,
+  PlaceResult,
+} from "../../src/types/places.types";
 
 export const declaration = {
   name: "getPlaceDetails",

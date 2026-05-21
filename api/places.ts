@@ -1,5 +1,10 @@
-import type { GooglePlacesTextSearchRequest, GooglePlacesTextSearchResponse, PlacesProxyErrorBody } from "../src/types";
-import { type PlaceResult, type GooglePlacesPlace } from "../src/types";
+import type {
+  GooglePlacesTextSearchRequest,
+  GooglePlacesTextSearchResponse,
+  PlacesProxyErrorBody,
+  PlaceResult,
+  GooglePlacesPlace,
+} from "../src/types/places.types";
 export const config = { runtime: "edge" };
 
 const GOOGLE_PLACES_URL = "https://places.googleapis.com/v1/places:searchText";

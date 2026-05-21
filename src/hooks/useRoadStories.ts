@@ -6,7 +6,7 @@ import { calculateDistance } from "../services/geolocation";
 import { generateRoadMessage } from "../services/gemini";
 import { speak, stop } from "../services/tts";
 import { logger } from "../services/logger";
-import { loadHistory, saveHistory } from "../services/storage";
+import { usePoiHistory } from "./usePoiHistory";
 
 export function useRoadStories(
   themes: Theme[],
@@ -29,7 +29,7 @@ export function useRoadStories(
   const [currentMessage, setCurrentMessage] = useState<string | null>(null);
   const [currentToolsUsed, setCurrentToolsUsed] = useState<string[]>([]);
   const [isMuted, setIsMuted] = useState(false);
-  const [history, setHistory] = useState<PoiHistoryEntry[]>(loadHistory);
+  const { history, addHistoryEntry, deleteHistoryEntry, hasTriggeredPOI, markPOITriggered } = usePoiHistory();
 
   // "idle" est dérivé de isActive — les autres états sont pilotés par setActiveStatus dans le tick
   const status: AppStatus = isActive ? activeStatus : "idle";
@@ -41,13 +41,6 @@ export function useRoadStories(
   const isTickRunning = useRef(false);
   const coordsRef = useRef<Coords | null>(null);
   const themesRef = useRef<Theme[]>(themes);
-  const triggeredPOIs = useRef(
-    new Set<string>(
-      loadHistory()
-        .map((e) => e.poiId)
-        .filter((id): id is string => id !== "")
-    )
-  );
   const overpassCache = useRef<{ coords: Coords; themesKey: string; pois: POI[] } | null>(null);
   const isMutedRef = useRef(false);
   const settingsRef = useRef(settings);
@@ -66,10 +59,6 @@ export function useRoadStories(
     settingsRef.current = settings;
     overpassCache.current = null; // force re-fetch si rayon ou seuil changé
   }, [settings]);
-  useEffect(() => {
-    saveHistory(history);
-  }, [history]);
-
   useEffect(() => {
     if (!isActive) return;
 
@@ -134,7 +123,7 @@ export function useRoadStories(
         let newPOI: POI | undefined;
 
         for (const poi of pois) {
-          if (triggeredPOIs.current.has(poi.id)) continue;
+          if (hasTriggeredPOI(poi.id)) continue;
 
           // 1. GARDE-FOU ANTI-POLLUTION (Exclusion des panneaux administratifs et règles de parcs)
           const isGuidepost = poi.tags["information"] === "guidepost";
@@ -145,7 +134,7 @@ export function useRoadStories(
 
           if (isGuidepost || isRuleBoard || hasRuleKeywords) {
             logger.debug("tick", "POI ignoré (panneau administratif) :", poi.name || "Sans nom");
-            triggeredPOIs.current.add(poi.id);
+            markPOITriggered(poi.id);
             continue;
           }
 
@@ -161,7 +150,7 @@ export function useRoadStories(
           // On valide le POI s'il a des tags riches OSM OU s'il est éligible à une recherche Wikipedia/Places
           if (!hasEnrichingTag && !isEligibleForTools) {
             logger.debug("tick", "POI ignoré (contexte insuffisant et non éligible aux outils) :", poi.name);
-            triggeredPOIs.current.add(poi.id);
+            markPOITriggered(poi.id);
             continue;
           }
 
@@ -189,8 +178,8 @@ export function useRoadStories(
         });
         logger.debug("tick", "Message :", message);
 
-        triggeredPOIs.current.add(newPOI.id);
-        setHistory((prev) => [{ poiId: newPOI.id, poiName: newPOI.name, message, toolsUsed, timestamp: new Date() }, ...prev]);
+        markPOITriggered(newPOI.id);
+        addHistoryEntry({ poiId: newPOI.id, poiName: newPOI.name, message, toolsUsed, timestamp: new Date() });
         setCurrentMessage(message);
         setCurrentToolsUsed(toolsUsed);
         setActiveStatus("speaking");
@@ -226,15 +215,7 @@ export function useRoadStories(
       setCurrentToolsUsed([]);
       wakeLock?.release().catch(() => {});
     };
-  }, [isActive, settings]);
-
-  function deleteHistoryEntry(index: number) {
-    setHistory((prev) => {
-      const entry = prev[index];
-      if (entry?.poiId) triggeredPOIs.current.delete(entry.poiId);
-      return prev.filter((_, i) => i !== index);
-    });
-  }
+  }, [addHistoryEntry, hasTriggeredPOI, isActive, markPOITriggered, settings]);
 
   return { isActive, setIsActive, status, currentPOIName, currentMessage, currentToolsUsed, isMuted, setIsMuted, history, deleteHistoryEntry };
 }

@@ -8,16 +8,12 @@
 export const config = { runtime: "edge" };
 
 import { toolDeclarations, executeTool } from "./tools/index";
-import { SYSTEM_PROMPT, buildUserPrompt } from "../src/services/prompts";
+import { SYSTEM_PROMPT } from "../src/services/prompts";
+import { buildEnrichedUserPrompt, GOOGLE_PLACES_TOOL_NAME, markToolUsedIfUseful, prefetchGooglePlaces } from "../src/services/geminiShared";
+import type { GenerateMessageParams } from "../src/types/gemini.types";
 
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-
-interface GenerateMessageParams {
-  poiName: string;
-  coords: { lat: number; lng: number };
-  poiTags: Record<string, string>;
-}
 
 type GeminiPart =
   | { text: string }
@@ -35,16 +31,6 @@ function extractText(data: GeminiApiResponse): string {
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   const textPart = parts.find((p): p is { text: string } => "text" in p);
   return textPart?.text ?? "";
-}
-
-function isUsefulToolResult(result: string | undefined): result is string {
-  if (!result) return false;
-  return (
-    result !== "Non disponible" &&
-    result !== "Informations Google Places non disponibles pour ce lieu" &&
-    !result.startsWith("Erreur") &&
-    !result.startsWith("Arguments manquants")
-  );
 }
 
 async function callGeminiAPI(apiKey: string, contents: GeminiContent[], withTools: boolean): Promise<GeminiApiResponse> {
@@ -108,33 +94,8 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   const { poiName, coords, poiTags } = params;
-  const toolsUsed: string[] = [];
-  let googlePlacesData = "Non cherché";
-
-  const isEstablishment = !!(poiTags["amenity"] || poiTags["shop"] || poiTags["tourism"] || poiTags["craft"]);
-  if (isEstablishment) {
-    try {
-      const result = await executeTool("getPlaceDetails", { name: poiName, lat: coords.lat, lng: coords.lng });
-      if (isUsefulToolResult(result)) {
-        googlePlacesData = result;
-        toolsUsed.push("getPlaceDetails");
-      } else {
-        googlePlacesData = result || "Non disponible";
-      }
-    } catch {
-      googlePlacesData = "Non disponible";
-    }
-  }
-
-  let userPrompt = buildUserPrompt(poiName, coords, poiTags);
-  userPrompt += `\n\nDonnées Google Places réelles trouvées : ${googlePlacesData}`;
-  userPrompt += "\nNote: Si un avis marquant ou une excellente note est présent, intègre-le de manière naturelle dans ton récit.";
-
-  if (poiTags["tourism"] === "artwork" || poiTags["artwork_type"]) {
-    userPrompt += `\n\nCONSIGNES IMPÉRATIVES POUR CETTE ŒUVRE D'ART :
-- Si le tag 'artist_name' est présent (${poiTags["artist_name"] || "non"}), tu DOIS obligatoirement citer le nom de l'artiste dans ton récit.
-- Si le tag 'material' est présent (${poiTags["material"] || "non"}), tu DOIS obligatoirement mentionner le matériau utilisé (ex: métal, bronze, pierre).`;
-  }
+  const { googlePlacesData, toolsUsed } = await prefetchGooglePlaces({ poiName, coords, poiTags }, (args) => executeTool(GOOGLE_PLACES_TOOL_NAME, args));
+  const userPrompt = buildEnrichedUserPrompt({ poiName, coords, poiTags }, googlePlacesData);
 
   const userContents: GeminiContent[] = [{ role: "user", parts: [{ text: userPrompt }] }];
 
@@ -150,9 +111,7 @@ export default async function handler(request: Request): Promise<Response> {
     if (functionCalls.length > 0) {
       const toolResults = await Promise.all(functionCalls.map((call) => executeTool(call.name, call.args)));
       functionCalls.forEach((call, index) => {
-        if (call.name && isUsefulToolResult(toolResults[index]) && !toolsUsed.includes(call.name)) {
-          toolsUsed.push(call.name);
-        }
+        markToolUsedIfUseful(toolsUsed, call.name, toolResults[index]);
       });
 
       const toolContents: GeminiContent[] = [

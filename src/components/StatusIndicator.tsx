@@ -23,10 +23,6 @@ export function StatusIndicator({ status, currentPOIName, detectionRadiusM }: St
     return <p className="text-blue-400 text-sm animate-pulse">✨ Génération en cours{currentPOIName ? ` — ${currentPOIName}` : "…"}</p>;
   }
 
-  if (status === "wikipedia") {
-    return <p className="text-blue-400 text-sm animate-pulse">📖 Consultation Wikipedia{currentPOIName ? ` — ${currentPOIName}` : "…"}</p>;
-  }
-
   if (status === "searching") {
     return <p className="text-blue-400 text-sm animate-pulse">🗺 Recherche des points d'intérêt…</p>;
   }

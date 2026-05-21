@@ -5,6 +5,19 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9] - 2026-05-21
+
+### Modifié
+
+- `src/services/geminiShared.ts` — extraction de la logique commune Places/Gemini (`prefetchGooglePlaces`, enrichissement du prompt, validation de `toolsUsed`) pour supprimer la duplication entre dev et prod.
+- `src/services/gemini.ts`, `api/gemini.ts` — utilisation du module partagé pour garder le pré-fetch Places et le prompt enrichi alignés entre local et production.
+- `src/types/places.types.ts`, `src/types/gemini.types.ts` — séparation des types Places/Gemini pour garder `src/types/index.ts` centré sur les types métier de l'application.
+- `package.json`, `package-lock.json` — version du projet portée à `1.0.9`.
+
+### Corrigé
+
+- `src/types/index.ts`, `src/components/StatusIndicator.tsx` — suppression du statut mort `wikipedia`, désormais géré en interne par les tools Gemini.
+
 ## [1.0.8] - 2026-05-21
 
 ### Ajouté
