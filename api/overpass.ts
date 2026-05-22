@@ -11,6 +11,8 @@
  * — Gestion multi-endpoints, timeout, et fallback automatique
  */
 
+import { logger } from "../src/services/logger";
+
 /**
  * Liste ordonnée des endpoints Overpass utilisés pour le proxy.
  */
@@ -36,6 +38,7 @@ const TIMEOUT_MS = 12_000;
  * @throws Error si la réponse n'est pas JSON ou HTTP non 2xx
  */
 async function tryEndpoint(url: string, body: string): Promise<string> {
+  logger.debug("overpass", `Trying endpoint: ${url}`);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -50,11 +53,13 @@ async function tryEndpoint(url: string, body: string): Promise<string> {
       signal: controller.signal,
     });
 
+    logger.debug("overpass", `Endpoint ${url} responded with status ${response.status}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const text = await response.text();
 
     // Certains endpoints renvoient une page HTML 200 en cas de rate-limit
+    logger.debug("overpass", `Endpoint ${url} response starts with: ${text.slice(0, 100)}`);
     if (!text.trimStart().startsWith("{")) throw new Error("Response is not JSON");
 
     return text;
@@ -70,6 +75,7 @@ async function tryEndpoint(url: string, body: string): Promise<string> {
  */
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== "POST") {
+    logger.debug("overpass", `Method Not Allowed: ${request.method}`);
     return new Response("Method Not Allowed", { status: 405 });
   }
 
@@ -77,6 +83,7 @@ export default async function handler(request: Request): Promise<Response> {
 
   try {
     const data = await Promise.any(UPSTREAM_ENDPOINTS.map((url) => tryEndpoint(url, body)));
+    logger.debug("overpass", "Successfully retrieved data from Overpass.");
     return new Response(data, {
       status: 200,
       headers: { "Content-Type": "application/json" },
