@@ -223,6 +223,20 @@ export function useRoadStories(
         didStartSpeaking = true;
         setCurrentPOIName(newPOI.name);
 
+        logger.debug("GEMINI CALL", {
+          prod: import.meta.env.PROD,
+          env: import.meta.env.MODE,
+          poi: newPOI.name,
+        });
+
+        // Sécurité : aucune requête Gemini en production si l'API n'est pas exposée
+        if (import.meta.env.PROD) {
+          logger.warn("tick", "Appel Gemini bloqué en production");
+          markPOITriggered(newPOI.id);
+          setActiveStatus("listening");
+          return;
+        }
+
         logger.debug("tick", "Gemini...");
         const { message, toolsUsed } = await generateRoadMessage({
           poiName: newPOI.name,

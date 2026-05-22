@@ -5,6 +5,18 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.15] - 2026-05-22
+
+### Corrigé
+
+- Blocage de Gemini en production et bascule vers les variables d’environnement VITE
+- Ajout d’un garde-fou dans useRoadStories pour éviter les requêtes Gemini en production lorsque l’API n’est pas exposée : affichage d’un warning, marquage du POI comme déclenché et passage de l’application en mode “listening” au lieu d’appeler Gemini
+- Ajout de logs de debug supplémentaires autour des appels Gemini (incluant l’environnement et le POI)
+- Mise à jour du service Gemini pour lire la clé API depuis import.meta.env.VITE_GEMINI_API_KEY (remplacement de process.env.GEMINI_API_KEY)
+- Ajustement des logs d’initialisation et de gestion d’erreur
+- Ajout d’une erreur explicite si la clé API est absente
+- Mise à jour de la configuration du logger pour utiliser VITE_ENABLE_DEBUG_LOGS afin de contrôler l’activation des logs en développement
+
 ## [1.0.14] - 2026-05-22
 
 ### Fix
