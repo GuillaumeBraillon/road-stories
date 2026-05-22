@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import type { Content, FunctionCall, GenerateContentResponse, Part } from "@google/genai";
 import { executeToolCall, toolDeclarations } from "./agentTools";
-import { SYSTEM_PROMPT } from "./prompts"; // On importe les prompts d'ici !
+import { SYSTEM_PROMPT } from "./prompts";
 import { buildEnrichedUserPrompt, GOOGLE_PLACES_TOOL_NAME, markToolUsedIfUseful, prefetchGooglePlaces } from "./geminiShared";
 import { logger } from "./logger";
 import type { GeminiResult, GenerateMessageParams } from "../types/gemini.types";

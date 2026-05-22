@@ -1,0 +1,74 @@
+/**
+ * Logique de filtrage des POIs OSM.
+ * Responsabilité unique : décider si un POI mérite d'être traité.
+ * Aucune dépendance vers Gemini, Wikipedia ou Places.
+ */
+
+// --- Panneaux administratifs à ignorer ---
+
+const BLACKLISTED_INFORMATION_TYPES = new Set(["rules", "map", "guidepost", "office"]);
+
+/**
+ * Retourne true si le POI est un panneau administratif sans valeur culturelle
+ * (règlement de parc, plan de bus, bureau d'information, etc.)
+ */
+export function isAdministrativePOI(tags: Record<string, string>): boolean {
+  if (tags["information"] === "board" && BLACKLISTED_INFORMATION_TYPES.has(tags["board_type"] || "")) {
+    return true;
+  }
+
+  if (tags["information"] === "guidepost") return true;
+
+  const inscription = (tags["inscription"] || "").toLowerCase();
+  return (
+    inscription.includes("interdit aux") ||
+    inscription.includes("destinée aux enfants") ||
+    inscription.includes("sous la surveillance") ||
+    inscription.includes("règlement")
+  );
+}
+
+// --- Tags enrichissants ---
+
+/**
+ * Tags OSM qui apportent du contenu réel au-delà de la simple classification.
+ * Un POI avec au moins un de ces tags a du contexte exploitable.
+ */
+const ENRICHING_TAGS = ["description", "inscription", "heritage", "castle_type", "site_type", "denomination", "religion", "ele", "height", "wikidata"];
+
+/**
+ * Retourne true si le POI possède au moins un tag enrichissant.
+ */
+export function hasEnoughContext(tags: Record<string, string>): boolean {
+  return ENRICHING_TAGS.some((key) => tags[key]);
+}
+
+// --- Éligibilité aux outils Gemini ---
+
+/**
+ * Catégories pour lesquelles Gemini peut appeler Wikipedia ou Google Places.
+ * Ces POIs sont retenus même sans tags enrichissants OSM.
+ */
+const TOOL_SUPPORTED_CATEGORIES = new Set(["museum", "theatre", "artwork", "castle", "monument", "attraction", "arts_centre"]);
+
+/**
+ * Retourne true si le POI appartient à une catégorie
+ * pour laquelle Gemini peut utiliser ses outils.
+ */
+export function isEligibleForTools(tags: Record<string, string>): boolean {
+  return (
+    TOOL_SUPPORTED_CATEGORIES.has(tags["tourism"] || "") ||
+    TOOL_SUPPORTED_CATEGORIES.has(tags["amenity"] || "") ||
+    TOOL_SUPPORTED_CATEGORIES.has(tags["historic"] || "")
+  );
+}
+
+/**
+ * Point d'entrée principal — retourne true si le POI doit être ignoré.
+ * Combine les trois critères dans l'ordre du moins coûteux au plus coûteux.
+ */
+export function shouldSkipPOI(tags: Record<string, string>): boolean {
+  if (isAdministrativePOI(tags)) return true;
+  if (!hasEnoughContext(tags) && !isEligibleForTools(tags)) return true;
+  return false;
+}

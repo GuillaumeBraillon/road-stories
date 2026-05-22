@@ -13,17 +13,7 @@ export interface PlaceResult {
   websiteUri: string | null;
 }
 
-export interface PlaceLookupParams {
-  name: string;
-  lat: number;
-  lng: number;
-}
-
-export interface PlacesProxyRequestBody {
-  name: string;
-  lat: number;
-  lng: number;
-}
+// --- Proxy API ---
 
 export interface PlacesProxyErrorBody {
   error: string;
@@ -33,6 +23,8 @@ export interface CacheEntry {
   result: PlaceResult;
   cachedAt: number;
 }
+
+// --- Google Places API (requêtes / réponses) ---
 
 export interface GooglePlacesTextSearchRequest {
   textQuery: string;
@@ -76,31 +68,7 @@ export interface GooglePlacesTextSearchResponse {
   places?: GooglePlacesPlace[];
 }
 
-export interface PlacesToolArgs {
-  name?: unknown;
-  lat?: unknown;
-  lng?: unknown;
-}
-
-export interface PlacesToolNormalizedArgs {
-  name: string;
-  lat: number;
-  lng: number;
-}
-
-export interface PlacesToolDeclaration {
-  name: string;
-  description: string;
-  parameters: {
-    type: "OBJECT";
-    properties: {
-      name: { type: "STRING"; description: string };
-      lat: { type: "NUMBER"; description: string };
-      lng: { type: "NUMBER"; description: string };
-    };
-    required: ["name", "lat", "lng"];
-  };
-}
+// --- Fonctions ---
 
 export type GetPlaceDetails = (name: string, lat: number, lng: number) => Promise<PlaceResult | null>;
 

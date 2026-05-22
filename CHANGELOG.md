@@ -5,6 +5,28 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.10] - 2026-05-22
+
+### Ajouté
+
+- `src/components/BottomSheet.tsx` — composant générique pour les panneaux coulissants.
+- `src/components/ThemePanel.tsx`, `HistoryPanel.tsx`, `SettingsPanel.tsx` — chaque panneau UI extrait dans son propre composant.
+- `src/components/ToolBadges.tsx` — badges d'outils réutilisables pour l'affichage dans l'historique et le message courant.
+- `src/hooks/useOverpassCache.ts` — hook de cache Overpass pour éviter les requêtes redondantes.
+- `src/hooks/usePoiFilter.ts`, `src/services/poiFilter.ts` — centralisation de la logique de filtrage POI (`shouldSkipPOI`, `isAdministrativePOI`, `hasEnoughContext`, `isEligibleForTools`).
+- `src/types/core.types.ts` — types métier extraits, réexportés dans `src/types/index.ts`.
+
+### Modifié
+
+- `src/services/gemini.ts`, `src/services/prompts.ts` — nettoyage des prompts, alignement des types Gemini, simplification de la génération de message.
+- `src/App.tsx`, `src/hooks/useRoadStories.ts` — utilisation des nouveaux hooks et composants, simplification de la gestion d'état, séparation claire UI/cache/filtrage/lecture TTS.
+
+### Refactorisé
+
+- Découpage des panneaux UI (App) en composants dédiés.
+- Extraction et centralisation de la logique de filtrage POI et du cache Overpass.
+- Nettoyage du code, corrections de formatage, wording des prompts.
+
 ## [1.0.9] - 2026-05-21
 
 ### Modifié

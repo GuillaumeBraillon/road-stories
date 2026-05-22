@@ -7,6 +7,7 @@ import { generateRoadMessage } from "../services/gemini";
 import { speak, stop } from "../services/tts";
 import { logger } from "../services/logger";
 import { usePoiHistory } from "./usePoiHistory";
+import { shouldSkipPOI } from "../services/poiFilter";
 
 export function useRoadStories(
   themes: Theme[],
@@ -31,12 +32,9 @@ export function useRoadStories(
   const [isMuted, setIsMuted] = useState(false);
   const { history, addHistoryEntry, deleteHistoryEntry, hasTriggeredPOI, markPOITriggered } = usePoiHistory();
 
-  // "idle" est dérivé de isActive — les autres états sont pilotés par setActiveStatus dans le tick
   const status: AppStatus = isActive ? activeStatus : "idle";
-
   const { coords } = useGeolocation();
 
-  // Refs pour éviter les stale closures dans l'interval
   const isSpeakingRef = useRef(false);
   const isTickRunning = useRef(false);
   const coordsRef = useRef<Coords | null>(null);
@@ -57,12 +55,12 @@ export function useRoadStories(
   }, [isMuted]);
   useEffect(() => {
     settingsRef.current = settings;
-    overpassCache.current = null; // force re-fetch si rayon ou seuil changé
+    overpassCache.current = null;
   }, [settings]);
+
   useEffect(() => {
     if (!isActive) return;
 
-    // Wake Lock
     let wakeLock: WakeLockSentinel | null = null;
     navigator.wakeLock
       ?.request("screen")
@@ -74,7 +72,6 @@ export function useRoadStories(
     const tick = async () => {
       if (isTickRunning.current) return;
       isTickRunning.current = true;
-
       let didStartSpeaking = false;
 
       try {
@@ -92,7 +89,6 @@ export function useRoadStories(
 
         let pois: POI[];
         if (hasMoved || themesChanged) {
-          logger.debug("tick", "Interrogation Overpass...");
           setActiveStatus("searching");
           pois = await getNearbyPOIs(currentCoords, themesRef.current, settingsRef.current.detectionRadiusM);
           overpassCache.current = { coords: currentCoords, themesKey, pois };
@@ -110,50 +106,15 @@ export function useRoadStories(
           );
         }
 
-        // Tags qui apportent du contenu réel au-delà de la simple classification OSM.
-        // Pré-filtrage synchrone : on saute immédiatement les POIs sans contenu exploitable
-        // plutôt qu'attendre le prochain tick de 30 secondes.
-        // Tags qui apportent du contenu réel au-delà de la simple classification OSM.
-        // Tags textuels OSM d'origine
-        const ENRICHING_TAGS = ["description", "inscription", "heritage", "castle_type", "site_type", "denomination", "religion", "ele", "height", "wikidata"];
-
-        // Catégories prioritaires pour lesquelles Gemini peut utiliser ses outils (Wikipedia / Google Places)
-        const TOOL_SUPPORTED_CATEGORIES = new Set(["museum", "theatre", "artwork", "castle", "monument", "attraction", "arts_centre"]);
-
+        // Filtrage — délégué à poiFilter.ts
         let newPOI: POI | undefined;
-
         for (const poi of pois) {
           if (hasTriggeredPOI(poi.id)) continue;
-
-          // 1. GARDE-FOU ANTI-POLLUTION (Exclusion des panneaux administratifs et règles de parcs)
-          const isGuidepost = poi.tags["information"] === "guidepost";
-          const isRuleBoard = poi.tags["information"] === "board" && poi.tags["board_type"] === "rules";
-          const inscriptionText = (poi.tags["inscription"] || "").toLowerCase();
-          const hasRuleKeywords =
-            inscriptionText.includes("destinée aux enfants") || inscriptionText.includes("interdit aux") || inscriptionText.includes("règlement");
-
-          if (isGuidepost || isRuleBoard || hasRuleKeywords) {
-            logger.debug("tick", "POI ignoré (panneau administratif) :", poi.name || "Sans nom");
+          if (shouldSkipPOI(poi.tags)) {
+            logger.debug("tick", "POI ignoré :", poi.name || "Sans nom");
             markPOITriggered(poi.id);
             continue;
           }
-
-          // 2. VÉRIFICATION DU CONTEXTE (OSM ou Outils Gemini)
-          const hasEnrichingTag = ENRICHING_TAGS.some((key) => poi.tags[key]);
-
-          // Est-ce que le POI appartient à une catégorie gérée par nos outils ?
-          const isEligibleForTools =
-            TOOL_SUPPORTED_CATEGORIES.has(poi.tags["tourism"] || "") ||
-            TOOL_SUPPORTED_CATEGORIES.has(poi.tags["amenity"] || "") ||
-            TOOL_SUPPORTED_CATEGORIES.has(poi.tags["historic"] || "");
-
-          // On valide le POI s'il a des tags riches OSM OU s'il est éligible à une recherche Wikipedia/Places
-          if (!hasEnrichingTag && !isEligibleForTools) {
-            logger.debug("tick", "POI ignoré (contexte insuffisant et non éligible aux outils) :", poi.name);
-            markPOITriggered(poi.id);
-            continue;
-          }
-
           newPOI = poi;
           break;
         }
@@ -164,7 +125,6 @@ export function useRoadStories(
           return;
         }
 
-        // À partir d'ici on génère et lit un message.
         isSpeakingRef.current = !isMutedRef.current;
         setActiveStatus("generating");
         didStartSpeaking = true;
@@ -183,9 +143,7 @@ export function useRoadStories(
         setCurrentMessage(message);
         setCurrentToolsUsed(toolsUsed);
         setActiveStatus("speaking");
-        if (!isMutedRef.current) {
-          await speak(message);
-        }
+        if (!isMutedRef.current) await speak(message);
       } catch (error) {
         logger.error("Road Stories error:", error);
         if (!didStartSpeaking) setActiveStatus("listening");
@@ -195,7 +153,6 @@ export function useRoadStories(
           isSpeakingRef.current = false;
           setActiveStatus("listening");
           setCurrentPOIName(null);
-          // En mode muet : conserver le message affiché jusqu'au prochain POI
           if (!isMutedRef.current) {
             setCurrentMessage(null);
             setCurrentToolsUsed([]);
@@ -204,7 +161,6 @@ export function useRoadStories(
       }
     };
 
-    // Premier tick immédiat, puis intervalle configurable
     void tick();
     const intervalId = setInterval(tick, settings.pollIntervalMs);
 
