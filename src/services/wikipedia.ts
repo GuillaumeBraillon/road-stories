@@ -1,6 +1,23 @@
+/**
+ * URL de base de l'API Wikipedia REST (résumés)
+ */
 const WIKIPEDIA_URL = "https://fr.wikipedia.org/api/rest_v1/page/summary";
+
+/**
+ * Timeout maximal pour les requêtes Wikipedia (ms)
+ */
 const TIMEOUT_MS = 5_000;
 
+/**
+ * Récupère le résumé d'une page Wikipedia en français
+ * - 1ère tentative : titre tel quel (ex: "Pont du Gard")
+ * - 2e tentative : titre en minuscules (pour les variantes)
+ * - Ignore les pages d'homonymie et sans coordonnées
+ *
+ * @param title Titre de la page Wikipedia
+ * @param signal Signal d'annulation (timeout)
+ * @returns Résumé, null ou "not-found"
+ */
 async function fetchSummary(title: string, signal: AbortSignal): Promise<string | null | "not-found"> {
   const slug = title.replace(/ /g, "_");
   const response = await fetch(`${WIKIPEDIA_URL}/${encodeURIComponent(slug)}`, { signal });
@@ -14,12 +31,23 @@ async function fetchSummary(title: string, signal: AbortSignal): Promise<string 
     coordinates?: unknown;
   };
 
+  // Si la page est une page d'homonymie, on ne garde pas
   if (data.type === "disambiguation") return null;
+  // Si la page n'est pas géolocalisée, on ne garde pas
   if (!data.coordinates) return null;
 
   return data.extract ?? null;
 }
 
+/**
+ * Fonction principale pour obtenir un résumé Wikipedia
+ * - Timeout 5s
+ * - 2 tentatives (casse normale puis minuscule)
+ * - Ignore les pages d'homonymie ou sans coordonnées
+ *
+ * @param title Titre de la page Wikipedia
+ * @returns Résumé ou null
+ */
 export async function getWikipediaSummary(title: string): Promise<string | null> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -37,6 +65,7 @@ export async function getWikipediaSummary(title: string): Promise<string | null>
 
     return null;
   } catch (error) {
+    // Gestion des erreurs réseau classiques (timeout, fetch annulé, etc.)
     if (error instanceof DOMException && error.name === "AbortError") return null;
     if (error instanceof TypeError) return null;
     throw error;

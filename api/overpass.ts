@@ -1,13 +1,19 @@
 /**
  * Proxy Vercel Edge Function — Overpass API
+/**
+ * Proxy Vercel Edge Function — Overpass API
  *
  * Résout les erreurs CORS : le fetch vers Overpass s'effectue côté serveur.
  * Utilise Promise.any() pour lancer toutes les requêtes en parallèle et
  * retourner la première réponse valide (plus rapide et plus résilient).
+ *
+ * — Point d'entrée principal pour la récupération de POI OSM côté serveur
+ * — Gestion multi-endpoints, timeout, et fallback automatique
  */
 
-export const config = { runtime: "edge" };
-
+/**
+ * Liste ordonnée des endpoints Overpass utilisés pour le proxy.
+ */
 const UPSTREAM_ENDPOINTS = [
   "https://overpass.karte.io/api/interpreter",
   "https://overpass.openstreetmap.fr/api/interpreter",
@@ -17,8 +23,18 @@ const UPSTREAM_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
 ];
 
+/**
+ * Timeout maximum pour chaque requête Overpass (ms).
+ */
 const TIMEOUT_MS = 12_000;
 
+/**
+ * Tente une requête POST vers un endpoint Overpass donné, avec timeout.
+ * @param url Endpoint Overpass
+ * @param body Corps de la requête (form-urlencoded)
+ * @returns Réponse texte brute
+ * @throws Error si la réponse n'est pas JSON ou HTTP non 2xx
+ */
 async function tryEndpoint(url: string, body: string): Promise<string> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -47,6 +63,11 @@ async function tryEndpoint(url: string, body: string): Promise<string> {
   }
 }
 
+/**
+ * Handler principal Vercel Edge: proxy POST vers Overpass, multi-endpoints, fallback.
+ * @param request Requête HTTP entrante
+ * @returns Réponse HTTP avec le JSON Overpass ou erreur
+ */
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });

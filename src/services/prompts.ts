@@ -1,3 +1,7 @@
+/**
+ * Liste des préfixes de tags OSM considérés comme culturels ou informatifs pour la génération de messages.
+ * Utilisé pour filtrer les tags pertinents à transmettre à l'IA.
+ */
 export const CULTURAL_TAG_PREFIXES = [
   "historic",
   "tourism",
@@ -22,6 +26,14 @@ export const CULTURAL_TAG_PREFIXES = [
   "wikidata",
 ];
 
+/**
+ * Prompt système envoyé à Gemini pour cadrer la génération du message audio culturel.
+ *
+ * - Impose l'utilisation systématique des outils (Wikipedia, Google Places)
+ * - Contraint la forme orale, factuelle, concise (max 30s)
+ * - Donne des règles strictes sur l'exploitation des tags OSM et la formulation
+ * - Précise la gestion des cas d'indisponibilité des outils
+ */
 export const SYSTEM_PROMPT = `Tu es un guide culturel pour automobilistes sur route ou autoroute.
 Génère un message audio de maximum 30 secondes (environ 60 mots).
 Le message doit être factuel, oral et naturel — jamais encyclopédique.
@@ -41,13 +53,33 @@ Si tu utilises l'outil Wikipedia et qu'il retourne "Non disponible", génère le
 Si les informations disponibles sont "Non disponible", appuie-toi sur les tags OSM pour caractériser le lieu. Ne génère jamais de détails historiques ou géographiques précis sur un lieu que tu ne peux pas identifier avec certitude depuis les coordonnées GPS et les tags fournis.
 Réponds uniquement avec le texte à lire à voix haute.`;
 
+/**
+ * Ensemble optimisé pour tester la présence d'un préfixe culturel dans les tags OSM.
+ */
 const CULTURAL_PREFIXES_SET = new Set(CULTURAL_TAG_PREFIXES);
+
+/**
+ * Valeurs de tags OSM qui rendent un lieu éligible à un enrichissement Google Places (établissement public).
+ */
 const PLACES_ELIGIBLE_VALUES = new Set(["museum", "restaurant", "attraction"]);
 
+/**
+ * Génère le prompt utilisateur transmis à Gemini pour chaque POI.
+ *
+ * - Sélectionne et formate les tags OSM pertinents (culturels)
+ * - Gère le cas particulier des inscriptions gravées ("inscription")
+ * - Ajoute une consigne spécifique si le lieu est un établissement public (Google Places)
+ *
+ * @param poiName Nom du point d'intérêt (POI)
+ * @param coords Coordonnées GPS du POI
+ * @param poiTags Ensemble des tags OSM du POI
+ * @returns Prompt utilisateur prêt à être envoyé à Gemini
+ */
 export function buildUserPrompt(poiName: string, coords: { lat: number; lng: number }, poiTags: Record<string, string>): string {
   const { lat, lng } = coords;
   const formattedCoords = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 
+  // Filtrage des tags OSM pertinents pour la culture
   const relevantTags = Object.entries(poiTags)
     .filter(([key]) => {
       const mainPrefix = key.split(":")[0];
@@ -56,19 +88,17 @@ export function buildUserPrompt(poiName: string, coords: { lat: number; lng: num
     .map(([key, value]) => `- ${key}: ${value}`)
     .join("\n");
 
-  const tagsSection = `Tags OpenStreetMap disponibles :
-${relevantTags || "- aucun tag culturel exploitable"}`;
+  const tagsSection = `Tags OpenStreetMap disponibles :\n${relevantTags || "- aucun tag culturel exploitable"}`;
 
+  // Cas particulier : le nom du POI est une inscription gravée
   if (poiTags["inscription"] === poiName) {
-    return `Un monument se trouve à proximité — coordonnées GPS : ${formattedCoords}
-${tagsSection}
-Ce monument porte l'inscription gravée : "${poiName}"
-Traduis et explique cette inscription en 2-3 phrases orales naturelles. Ne nomme pas le monument — concentre-toi sur ce que signifie l'inscription.
-Génère le message.`;
+    return `Un monument se trouve à proximité — coordonnées GPS : ${formattedCoords}\n${tagsSection}\nCe monument porte l'inscription gravée : "${poiName}"\nTraduis et explique cette inscription en 2-3 phrases orales naturelles. Ne nomme pas le monument — concentre-toi sur ce que signifie l'inscription.\nGénère le message.`;
   }
 
+  // Éligibilité à l'enrichissement Google Places
   const isPlacesEligible = PLACES_ELIGIBLE_VALUES.has(poiTags["tourism"]) || PLACES_ELIGIBLE_VALUES.has(poiTags["amenity"]);
 
+  // Consigne spécifique pour les établissements publics
   const consigneSpecifique = isPlacesEligible
     ? `\nRÈGLE DE RÉDACTION IMPÉRATIVE (Établissement public) :
 - Utilise l'outil Google Places pour obtenir les détails réels.
@@ -79,9 +109,5 @@ Génère le message.`;
 - ATTENTION : Ne fais pas une liste brute de données. Fusionne ces éléments dans un récit oral et captivant de 30 secondes maximum.`
     : "";
 
-  return `Lieu : ${poiName}
-Coordonnées GPS : ${formattedCoords}
-${tagsSection}
-${consigneSpecifique}
-Génère le message.`;
+  return `Lieu : ${poiName}\nCoordonnées GPS : ${formattedCoords}\n${tagsSection}\n${consigneSpecifique}\nGénère le message.`;
 }

@@ -1,3 +1,15 @@
+/**
+ * Composant ThemePanel
+ *
+ * Affiche le panneau latéral de sélection des thèmes et groupes de thèmes.
+ *
+ * Props :
+ * - isOpen : booléen, ouverture/fermeture du panneau
+ * - onClose : callback fermeture
+ * - themeGroups : liste des groupes de thèmes
+ * - onToggleTheme : callback toggle d’un sous-thème
+ * - onToggleGroup : callback toggle d’un groupe
+ */
 import type { ThemeGroup } from "../types";
 import { BottomSheet } from "./BottomSheet";
 import { ThemeSelector } from "./ThemeSelector";

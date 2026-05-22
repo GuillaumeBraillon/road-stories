@@ -1,3 +1,17 @@
+/**
+ * Composant BottomSheet
+ *
+ * Affiche un panneau coulissant depuis le bas de l’écran, utilisé pour les panneaux de réglages, thèmes, historique, etc.
+ *
+ * Props :
+ * - isOpen : booléen, contrôle l’ouverture/fermeture du panneau
+ * - onClose : callback appelé lors de la fermeture
+ * - title : titre affiché en haut du panneau
+ * - children : contenu du panneau
+ *
+ * Utilisation :
+ * <BottomSheet isOpen={isOpen} onClose={closeFn} title="Titre"> ... </BottomSheet>
+ */
 interface BottomSheetProps {
   isOpen: boolean;
   onClose: () => void;

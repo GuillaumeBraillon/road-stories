@@ -1,3 +1,15 @@
+/**
+ * Composant HistoryPanel
+ *
+ * Affiche le panneau latéral de l’historique des POI déclenchés.
+ * Permet de réécouter un message ou de supprimer une entrée.
+ *
+ * Props :
+ * - isOpen : booléen, ouverture/fermeture du panneau
+ * - onClose : callback fermeture
+ * - history : tableau d’entrées d’historique (PoiHistoryEntry[])
+ * - onDelete : suppression d’une entrée
+ */
 import { useState } from "react";
 import type { PoiHistoryEntry } from "../types";
 import { BottomSheet } from "./BottomSheet";

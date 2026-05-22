@@ -5,6 +5,12 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] - 2026-05-22
+
+### Ajouté
+
+- Jsdocs
+
 ## [1.0.10] - 2026-05-22
 
 ### Ajouté

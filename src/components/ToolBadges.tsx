@@ -1,3 +1,11 @@
+/**
+ * Composant ToolBadges
+ *
+ * Affiche les badges des outils IA utilisés pour générer le message (Gemini, Wikipedia, Google Places).
+ *
+ * Props :
+ * - tools : tableau de noms d’outils utilisés (string[])
+ */
 interface ToolBadgesProps {
   tools: string[] | undefined;
 }

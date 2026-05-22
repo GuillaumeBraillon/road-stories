@@ -1,3 +1,9 @@
+/**
+ * Hook usePWAInstall
+ *
+ * Détecte si l’application est installable en PWA et fournit la fonction d’installation.
+ * Fournit isInstallable (bool) et install() (callback).
+ */
 import { useState, useEffect } from "react";
 
 // Type pour l'événement PWA beforeinstallprompt
@@ -34,9 +40,21 @@ interface BeforeInstallPromptEvent extends Event {
  * ```
  */
 export function usePWAInstall() {
+  /**
+   * Stocke l’événement beforeinstallprompt pour déclencher l’installation plus tard.
+   */
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+
+  /**
+   * Indique si l’app est installable (bannière possible)
+   */
   const [isInstallable, setIsInstallable] = useState(false);
 
+  /**
+   * Effet : écoute l’événement beforeinstallprompt du navigateur
+   * - Empêche l’affichage automatique de la bannière
+   * - Stocke l’événement pour affichage manuel
+   */
   useEffect(() => {
     const handler = (e: Event) => {
       // Empêcher Chrome d'afficher la bannière automatiquement
@@ -53,6 +71,11 @@ export function usePWAInstall() {
     };
   }, []);
 
+  /**
+   * Déclenche le prompt d’installation PWA
+   * - Appelle prompt() sur l’événement stocké
+   * - Met à jour l’état selon la réponse utilisateur
+   */
   const install = async () => {
     if (!deferredPrompt) return;
 

@@ -1,9 +1,22 @@
+/**
+ * Déclaration des outils utilisables par l'agent Gemini (tool use)
+ *
+ * Chaque outil est un objet avec :
+ * - declaration : schéma OpenAPI-like pour Gemini
+ * - execute : fonction appelée lors d'un tool call
+ */
 import { Type } from "@google/genai";
 import type { FunctionCall } from "@google/genai";
 import { getWikipediaSummary } from "./wikipedia";
 import { getPlaceDetails, formatPriceLevel } from "./places";
 import { logger } from "./logger";
 
+/**
+ * Décrit la déclaration d'un outil Gemini pour la tool use API
+ * @property name Nom de l'outil
+ * @property description Description affichée dans la console Gemini
+ * @property parameters Schéma des paramètres attendus (OpenAPI-like)
+ */
 type ToolDeclaration = {
   name: string;
   description: string;
@@ -14,12 +27,25 @@ type ToolDeclaration = {
   };
 };
 
+/**
+ * Structure d'un outil Gemini utilisable dynamiquement
+ * @property declaration Déclaration OpenAPI-like
+ * @property execute Fonction asynchrone appelée lors d'un tool call
+ */
 type AgentTool = {
   declaration: ToolDeclaration;
   execute: (args: Record<string, unknown>) => Promise<string>;
 };
 
-// --- OUTIL 1 : WIKIPÉDIA ---
+/**
+ * Outil Wikipedia pour Gemini
+ * Permet à Gemini de récupérer dynamiquement le résumé Wikipédia d'un lieu
+ *
+ * - name : getWikipediaSummary
+ * - description : résumé Wikipédia en français
+ * - parameters : { title: string }
+ * - execute : appelle getWikipediaSummary puis log le résultat
+ */
 const wikipediaTool: AgentTool = {
   declaration: {
     name: "getWikipediaSummary",
@@ -40,7 +66,27 @@ const wikipediaTool: AgentTool = {
   },
 };
 
-// --- OUTIL 2 : GOOGLE PLACES ---
+/**
+ * Outil Google Places pour Gemini
+ * Permet à Gemini de récupérer dynamiquement les informations pratiques d’un lieu visitable (musée, château, parc…)
+ *
+ * - name : getPlaceDetails
+ * - description : note, horaires, adresse, tarifs, extrait d’avis Google
+ * - parameters : { name: string, lat: number, lng: number }
+ * - execute : appelle getPlaceDetails, formate la réponse, gère les cas d’absence de données
+ *
+ * Détails de fonctionnement :
+ * - Ne doit PAS être appelé pour des éléments naturels sans infrastructure (ex: rivière, forêt)
+ * - Utilise le nom OSM exact, la latitude et la longitude pour maximiser la précision de la recherche
+ * - Si aucune donnée n’est trouvée, retourne un message explicite
+ * - Formate la réponse pour un affichage oral naturel (adresse, note, horaires, tarifs, extrait d’avis)
+ * - Utilise formatPriceLevel pour traduire le niveau de prix Google
+ *
+ * Bonnes pratiques :
+ * - Toujours vérifier la présence de chaque champ avant affichage
+ * - Ne jamais inventer d’information si le champ est absent
+ * - Le texte retourné est destiné à être lu à voix haute
+ */
 const placesTool: AgentTool = {
   declaration: {
     name: "getPlaceDetails",
@@ -74,15 +120,30 @@ Extrait d'un avis: ${result.topReview ?? "aucun avis disponible"}`;
   },
 };
 
-// --- REGISTRE DES OUTILS ---
+/**
+ * Tableau des outils disponibles pour l'agent Gemini
+ * (utilisé pour le registre dynamique et l'export des déclarations)
+ */
 const AGENT_TOOLS: AgentTool[] = [wikipediaTool, placesTool];
 
-// Export unique des déclarations pour le "config.tools" de Gemini
+/**
+ * Export unique des déclarations pour le "config.tools" de Gemini
+ * À utiliser dans la configuration Gemini pour déclarer les outils disponibles
+ */
 export const toolDeclarations = {
   functionDeclarations: AGENT_TOOLS.map((tool) => tool.declaration),
 };
 
-// Fonction unique d'exécution dynamique
+/**
+ * Fonction unique d'exécution dynamique d'un tool call Gemini
+ *
+ * @param call Objet FunctionCall Gemini (nom + args)
+ * @returns Résultat textuel à restituer à l'utilisateur
+ *
+ * - Vérifie la présence des arguments
+ * - Recherche l'outil correspondant dans le registre
+ * - Exécute la fonction associée et gère les erreurs
+ */
 export async function executeToolCall(call: FunctionCall): Promise<string> {
   if (!call.args) {
     return "Arguments manquants pour l'appel de fonction";

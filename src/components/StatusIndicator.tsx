@@ -1,3 +1,14 @@
+/**
+ * Composant StatusIndicator
+ *
+ * Affiche l’état courant de l’application (idle, recherche, lecture, etc.)
+ * Affiche le nom du POI courant et le rayon de détection.
+ *
+ * Props :
+ * - status : statut de l’app (AppStatus)
+ * - currentPOIName : nom du POI courant
+ * - detectionRadiusM : rayon de détection en mètres
+ */
 import type { AppStatus } from "../types";
 
 interface StatusIndicatorProps {

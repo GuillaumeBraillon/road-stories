@@ -1,3 +1,14 @@
+/**
+ * Composant SettingsPanel
+ *
+ * Affiche le panneau latéral des réglages utilisateur (intervalle, rayon, etc).
+ *
+ * Props :
+ * - isOpen : booléen, ouverture/fermeture du panneau
+ * - onClose : callback fermeture
+ * - settings : objet AppSettings
+ * - onChange : callback de modification des réglages
+ */
 import type { AppSettings } from "../types";
 import { BottomSheet } from "./BottomSheet";
 

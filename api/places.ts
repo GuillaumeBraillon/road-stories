@@ -5,14 +5,38 @@ import type {
   PlaceResult,
   GooglePlacesPlace,
 } from "../src/types/places.types";
+/**
+ * Vercel Edge Function — Proxy Google Places
+ *
+ * Permet de requêter Google Places côté serveur (API REST) pour obtenir les détails d'un lieu.
+ * — Gère la normalisation des horaires, avis, tarifs, etc.
+ * — Ne retourne qu'un seul résultat (le plus pertinent)
+ */
 export const config = { runtime: "edge" };
 
+/**
+ * URL de l'API Google Places REST.
+ */
 const GOOGLE_PLACES_URL = "https://places.googleapis.com/v1/places:searchText";
+/**
+ * Champs à récupérer pour chaque lieu (fieldMask Google Places).
+ */
 const FIELD_MASK =
   "places.id,places.displayName,places.rating,places.userRatingCount,places.priceLevel,places.currentOpeningHours,places.reviews,places.formattedAddress,places.types,places.googleMapsUri,places.websiteUri";
+/**
+ * Rayon de recherche (mètres) autour du POI.
+ */
 const SEARCH_RADIUS_M = 1500;
+/**
+ * Nombre maximum de résultats à retourner (1 = le plus pertinent).
+ */
 const MAX_RESULT_COUNT = 1;
 
+/**
+ * Extrait l'avis utilisateur le plus pertinent (français prioritaire, max 200 caractères).
+ * @param place Lieu Google Places
+ * @returns Texte de l'avis ou null
+ */
 function normalizeTopReview(place: GooglePlacesPlace): string | null {
   const reviews = Array.isArray(place.reviews) ? place.reviews : [];
   if (reviews.length === 0) return null;
@@ -23,6 +47,11 @@ function normalizeTopReview(place: GooglePlacesPlace): string | null {
   return preferredReview.text.text.slice(0, 200);
 }
 
+/**
+ * Transforme un objet GooglePlacesPlace en PlaceResult normalisé pour l'app.
+ * @param place Lieu Google Places
+ * @returns PlaceResult formaté
+ */
 function toPlaceResult(place: GooglePlacesPlace): PlaceResult {
   // Correction Fuseau Horaire + Alignement Index Google
   const formatter = new Intl.DateTimeFormat("fr-FR", { weekday: "long", timeZone: "Europe/Paris" });
@@ -45,6 +74,11 @@ function toPlaceResult(place: GooglePlacesPlace): PlaceResult {
   };
 }
 
+/**
+ * Handler principal Vercel Edge: proxy GET Google Places, normalisation du résultat.
+ * @param request Requête HTTP entrante
+ * @returns Réponse HTTP avec le JSON Google Places ou erreur
+ */
 export default async function handler(request: Request): Promise<Response> {
   try {
     // Changement ici : On accepte uniquement le GET

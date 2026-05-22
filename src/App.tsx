@@ -11,6 +11,11 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { usePWAInstall } from "./hooks/usePWAInstall";
 import { Download } from "lucide-react";
 
+/**
+ * Liste par défaut des groupes de thèmes et sous-thèmes proposés à l'utilisateur.
+ * Chaque sous-thème contient un ou plusieurs filtres OSM utilisés pour les requêtes Overpass.
+ * Peut être modifié dans le code pour enrichir ou adapter la couverture.
+ */
 const DEFAULT_THEME_GROUPS: ThemeGroup[] = [
   {
     id: "patrimoine",
@@ -106,18 +111,46 @@ const DEFAULT_THEME_GROUPS: ThemeGroup[] = [
   },
 ];
 
+/**
+ * Aplati la structure des groupes de thèmes pour obtenir la liste complète des sous-thèmes.
+ * Utile pour passer tous les thèmes actifs au hook principal.
+ */
 function flattenThemes(groups: ThemeGroup[]): Theme[] {
   return groups.flatMap((g) => g.subThemes);
 }
 
+/**
+ * Composant racine de l'application Road Stories.
+ *
+ * - Gère l'état global (thèmes, réglages, panneaux ouverts)
+ * - Orchestre l'appel au hook métier principal `useRoadStories`
+ * - Centralise l'affichage UI (boutons, panneaux, message courant)
+ * - Relie la logique métier (détection, filtrage, historique, TTS) à l'interface utilisateur
+ */
 function App() {
+  /**
+   * État des groupes de thèmes sélectionnés par l'utilisateur.
+   * Persisté en localStorage via `loadThemeGroups`/`saveThemeGroups`.
+   */
   const [themeGroups, setThemeGroups] = useState<ThemeGroup[]>(() => loadThemeGroups(DEFAULT_THEME_GROUPS));
+
+  /**
+   * Réglages utilisateur (intervalle de scan, rayon, seuil de déplacement).
+   * Persisté en localStorage via `loadSettings`/`saveSettings`.
+   */
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
+
+  // État d'ouverture des panneaux latéraux (thèmes, historique, réglages)
   const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
   const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
+
+  /**
+   * Hook pour la gestion de l'installation PWA (affiche le bouton Installer si possible).
+   */
   const { isInstallable, install } = usePWAInstall();
 
+  // Sauvegarde automatique des réglages et thèmes à chaque modification
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
@@ -125,13 +158,31 @@ function App() {
     saveThemeGroups(themeGroups);
   }, [themeGroups]);
 
+  /**
+   * Liste à plat de tous les sous-thèmes (pour le compteur et la sélection).
+   */
   const allThemes = themeGroups.flatMap((g) => g.subThemes);
+  /**
+   * Nombre de thèmes actuellement actifs (pour affichage dans le bouton).
+   */
   const activeThemeCount = allThemes.filter((t) => t.enabled).length;
 
+  /**
+   * Hook principal qui orchestre toute la logique métier:
+   * - Activation/désactivation du mode Road Stories
+   * - Statut courant (idle, listening, searching, speaking…)
+   * - Détection GPS, filtrage, gestion du cache, requêtes Overpass
+   * - Génération de message IA (Gemini), synthèse vocale, gestion du mute
+   * - Historique des POI déclenchés
+   */
   const { isActive, setIsActive, status, currentPOIName, currentMessage, currentToolsUsed, isMuted, setIsMuted, history, deleteHistoryEntry } = useRoadStories(
     flattenThemes(themeGroups),
     settings
   );
+
+  /**
+   * Active/désactive un sous-thème donné (checkbox dans le panneau Thèmes).
+   */
 
   function handleThemeToggle(themeId: string) {
     setThemeGroups((prev) =>
@@ -142,6 +193,9 @@ function App() {
     );
   }
 
+  /**
+   * Active/désactive tous les sous-thèmes d'un groupe (toggle group dans le panneau Thèmes).
+   */
   function handleGroupToggle(groupId: string) {
     setThemeGroups((prev) =>
       prev.map((group) => {
@@ -152,9 +206,10 @@ function App() {
     );
   }
 
+  // --- Rendu UI principal ---
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center px-6 py-10 gap-8">
-      {/* Header */}
+      {/* Header principal avec version, installation PWA, accès réglages et mute */}
       <div className="w-full max-w-sm flex items-center justify-between">
         <div className="flex flex-col">
           <h1 className="text-3xl font-bold tracking-tight">Road Stories</h1>
@@ -170,9 +225,11 @@ function App() {
               <span className="hidden sm:inline">Installer</span>
             </button>
           )}
+          {/* Bouton réglages */}
           <button onClick={() => setIsSettingsPanelOpen(true)} className="text-2xl p-2 rounded-full hover:bg-gray-800 transition-colors" aria-label="Réglages">
             ⚙️
           </button>
+          {/* Bouton mute/unmute */}
           <button
             onClick={() => setIsMuted(!isMuted)}
             className="text-2xl p-2 rounded-full hover:bg-gray-800 transition-colors"
@@ -183,9 +240,10 @@ function App() {
         </div>
       </div>
 
+      {/* Indicateur d'état (idle, recherche, lecture, etc.) */}
       <StatusIndicator status={status} currentPOIName={currentPOIName} detectionRadiusM={settings.detectionRadiusM} />
 
-      {/* Message courant */}
+      {/* Message courant (anecdote en cours de lecture) */}
       {currentMessage && (
         <div className="w-full max-w-sm bg-gray-800 rounded-xl p-4 flex flex-col gap-2">
           {currentPOIName && <p className="text-gray-400 text-xs font-medium uppercase tracking-wide">{currentPOIName}</p>}
@@ -196,12 +254,12 @@ function App() {
         </div>
       )}
 
-      {/* Bouton ON/OFF */}
+      {/* Bouton ON/OFF principal */}
       <div className="flex-1 flex items-center justify-center">
         <ToggleButton isActive={isActive} onToggle={() => setIsActive(!isActive)} disabled={false} />
       </div>
 
-      {/* Boutons panneaux */}
+      {/* Boutons d'accès aux panneaux latéraux (thèmes, historique) */}
       <div className="flex items-center gap-3">
         <button
           onClick={() => setIsThemePanelOpen(true)}
@@ -223,7 +281,7 @@ function App() {
         </button>
       </div>
 
-      {/* Panneaux */}
+      {/* Panneaux latéraux (thèmes, historique, réglages) */}
       <ThemePanel
         isOpen={isThemePanelOpen}
         onClose={() => setIsThemePanelOpen(false)}

@@ -1,3 +1,13 @@
+/**
+ * Composant ToggleButton
+ *
+ * Bouton ON/OFF principal de l’application.
+ *
+ * Props :
+ * - isActive : booléen, état actif/inactif
+ * - onToggle : callback lors du clic
+ * - disabled : désactive le bouton
+ */
 interface ToggleButtonProps {
   isActive: boolean;
   onToggle: () => void;

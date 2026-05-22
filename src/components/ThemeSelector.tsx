@@ -1,3 +1,14 @@
+/**
+ * Composant ThemeSelector
+ *
+ * Liste les groupes et sous-thèmes avec cases à cocher pour la sélection.
+ * Utilisé dans ThemePanel.
+ *
+ * Props :
+ * - themeGroups : groupes de thèmes
+ * - onToggleTheme : callback toggle d’un sous-thème
+ * - onToggleGroup : callback toggle d’un groupe
+ */
 import { useState } from "react";
 import type { ThemeGroup } from "../types";
 

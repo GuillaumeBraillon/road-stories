@@ -1,3 +1,11 @@
+/**
+ * Hook useGeolocation
+ *
+ * Surveille la position GPS de l’utilisateur en temps réel.
+ * Retourne les coordonnées courantes (lat, lng) ou null si indisponible.
+ *
+ * Usage : const { coords } = useGeolocation();
+ */
 import { useState, useEffect } from "react";
 import type { Coords } from "../types";
 import { watchPosition, clearWatch } from "../services/geolocation";
@@ -13,9 +21,23 @@ import { watchPosition, clearWatch } from "../services/geolocation";
 const DEV_COORDS: Coords = { lat: 45.749718247886484, lng: 4.85146085822667 };
 
 export function useGeolocation(): { coords: Coords | null; error: string | null } {
+  /**
+   * Coordonnées GPS courantes (null si non dispo).
+   * En mode DEV, position simulée pour faciliter les tests.
+   */
   const [coords, setCoords] = useState<Coords | null>(import.meta.env.DEV ? DEV_COORDS : null);
+
+  /**
+   * Message d’erreur éventuel (perte de signal, refus de permission, etc).
+   */
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Effet : démarre la surveillance GPS au montage.
+   * - En mode DEV, ne fait rien (utilise la position simulée)
+   * - En prod, lance watchPosition et met à jour coords à chaque tick
+   * - Nettoie le watcher au démontage
+   */
   useEffect(() => {
     if (import.meta.env.DEV) return;
 
