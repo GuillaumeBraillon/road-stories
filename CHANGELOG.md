@@ -5,6 +5,15 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.14] - 2026-05-22
+
+### Fix
+
+- **API Gemini** : Correction d'un crash critique sur l'environnement de développement (`vercel dev`) lié à l'incompatibilité de l'interface `Request` entre le Runtime Node.js et le Runtime Edge.
+- **Architecture** : Mise en place d'une détection bivalente (Node/Edge) pour assurer une lecture fiable du payload JSON, quelle que soit la plateforme d'exécution.
+- **Logs** : Uniformisation de la télémétrie serveur via l'utilisation exclusive du service `logger`, garantissant une meilleure observabilité sur Vercel.
+- **Payload API** : Correction des clés de l'API REST Google (`systemInstruction` et `functionDeclarations`) pour se conformer au standard camelCase, résolvant des instabilités potentielles lors des appels d'inférence.
+
 ## [1.0.13] - 2026-05-22
 
 ### Added
