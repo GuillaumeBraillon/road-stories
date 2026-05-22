@@ -5,6 +5,18 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.13] - 2026-05-22
+
+### Added
+
+- Ajout de logs détaillés et typés dans le service Wikipédia (`src/services/wikipedia.ts`) pour tracer l'exécution de la cascade (OSM, Wikidata, Fallback textuel) et isoler les erreurs réseau ou timeouts.
+- Instrumentation de l'orchestrateur `gemini.ts` pour monitorer le cycle de vie des tokens, le statut du prefetch Google Places et les réponses intermédiaires de l'IA.
+
+### Fixed
+
+- Résolution d'un deadlock (boucle infinie) dans l'orchestrateur de requêtes en implémentant une boucle multi-tours (`while`) pour la résolution séquentielle ou parallèle des outils, combinée à l'activation du mode `NONE` (`toolConfig`) sur la passe d'inférence finale.
+- Correction des critères d'éligibilité à l'enrichissement Google Places dans `src/services/prompts.ts` : extension de la détection aux tags `historic` (ex: `castle`) pour forcer l'extraction des données pratiques (notes, avis, horaires) sur les monuments historiques ouverts au public.
+
 ## [1.0.12] - 2026-05-22
 
 ### Ajouté

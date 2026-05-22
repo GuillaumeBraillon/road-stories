@@ -1,21 +1,17 @@
 /**
- * Déclaration des outils utilisables par l'agent Gemini (tool use)
- *
- * Chaque outil est un objet avec :
- * - declaration : schéma OpenAPI-like pour Gemini
- * - execute : fonction appelée lors d'un tool call
+ * Orchestrateur et registre client des outils pour le Function Calling de Gemini.
+ * Centralise l'injection dynamique des tags OpenStreetMap pour préserver le contexte des POI.
+ * * @module services/agentTools
  */
+
 import { Type } from "@google/genai";
 import type { FunctionCall } from "@google/genai";
-import { getWikipediaSummary } from "./wikipedia";
+import * as wikipediaTool from "./wikipedia";
 import { getPlaceDetails, formatPriceLevel } from "./places";
 import { logger } from "./logger";
 
 /**
- * Décrit la déclaration d'un outil Gemini pour la tool use API
- * @property name Nom de l'outil
- * @property description Description affichée dans la console Gemini
- * @property parameters Schéma des paramètres attendus (OpenAPI-like)
+ * Signature structurelle d'une déclaration d'outil conforme à l'API de Google Gen AI.
  */
 type ToolDeclaration = {
   name: string;
@@ -28,9 +24,7 @@ type ToolDeclaration = {
 };
 
 /**
- * Structure d'un outil Gemini utilisable dynamiquement
- * @property declaration Déclaration OpenAPI-like
- * @property execute Fonction asynchrone appelée lors d'un tool call
+ * Contrat d'interface unifié pour un outil exécutable par l'agent.
  */
 type AgentTool = {
   declaration: ToolDeclaration;
@@ -38,127 +32,85 @@ type AgentTool = {
 };
 
 /**
- * Outil Wikipedia pour Gemini
- * Permet à Gemini de récupérer dynamiquement le résumé Wikipédia d'un lieu
- *
- * - name : getWikipediaSummary
- * - description : résumé Wikipédia en français
- * - parameters : { title: string }
- * - execute : appelle getWikipediaSummary puis log le résultat
- */
-const wikipediaTool: AgentTool = {
-  declaration: {
-    name: "getWikipediaSummary",
-    description: "Récupère le résumé Wikipédia en français d'un lieu historique ou remarquable.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        title: { type: Type.STRING, description: "Nom du lieu à rechercher" },
-      },
-      required: ["title"],
-    },
-  },
-  execute: async (args) => {
-    const title = String(args["title"] ?? "");
-    const summary = await getWikipediaSummary(title);
-    logger.debug("gemini", `Wikipedia (tool call) "${title}" :`, summary ?? "Non disponible");
-    return summary ?? "Non disponible";
-  },
-};
-
-/**
- * Outil Google Places pour Gemini
- * Permet à Gemini de récupérer dynamiquement les informations pratiques d’un lieu visitable (musée, château, parc…)
- *
- * - name : getPlaceDetails
- * - description : note, horaires, adresse, tarifs, extrait d’avis Google
- * - parameters : { name: string, lat: number, lng: number }
- * - execute : appelle getPlaceDetails, formate la réponse, gère les cas d’absence de données
- *
- * Détails de fonctionnement :
- * - Ne doit PAS être appelé pour des éléments naturels sans infrastructure (ex: rivière, forêt)
- * - Utilise le nom OSM exact, la latitude et la longitude pour maximiser la précision de la recherche
- * - Si aucune donnée n’est trouvée, retourne un message explicite
- * - Formate la réponse pour un affichage oral naturel (adresse, note, horaires, tarifs, extrait d’avis)
- * - Utilise formatPriceLevel pour traduire le niveau de prix Google
- *
- * Bonnes pratiques :
- * - Toujours vérifier la présence de chaque champ avant affichage
- * - Ne jamais inventer d’information si le champ est absent
- * - Le texte retourné est destiné à être lu à voix haute
+ * Adaptateur de structure pour interfacer le module Google Places existant.
  */
 const placesTool: AgentTool = {
   declaration: {
     name: "getPlaceDetails",
-    description:
-      "Récupère depuis Google Places la note, les horaires, l'adresse et les tarifs. À appeler uniquement pour les lieux visitables par le public (musées, châteaux, parcs aménagés). Ne PAS appeler pour des éléments naturels sans infrastructure.",
+    description: "Récupère les détails pratiques (avis, note, prix, horaires) d'un commerce ou lieu d'activité.",
     parameters: {
       type: Type.OBJECT,
       properties: {
-        name: { type: Type.STRING, description: "Nom exact du lieu tel qu'il apparaît sur OSM" },
-        lat: { type: Type.NUMBER, description: "Latitude du lieu" },
-        lng: { type: Type.NUMBER, description: "Longitude du lieu" },
+        name: { type: Type.STRING, description: "Nom du commerce ou de l'établissement" },
+        lat: { type: Type.NUMBER, description: "Latitude" },
+        lng: { type: Type.NUMBER, description: "Longitude" },
       },
       required: ["name", "lat", "lng"],
     },
   },
   execute: async (args) => {
+    // Extraction et typage explicite pour éviter le type 'unknown'
     const name = String(args["name"] ?? "");
-    const lat = Number(args["lat"]);
-    const lng = Number(args["lng"]);
+    const lat = Number(args["lat"] ?? 0);
+    const lng = Number(args["lng"] ?? 0);
 
+    if (!name || !lat || !lng) {
+      return "Arguments manquants pour l'appel de fonction getPlaceDetails";
+    }
+
+    // CORRECTION : Passage des 3 arguments attendus au lieu d'un objet unique
     const result = await getPlaceDetails(name, lat, lng);
+
     if (!result) return "Informations Google Places non disponibles pour ce lieu";
 
-    return `Nom: ${name}
-Adresse: ${result.address ?? "non disponible"}
-Note: ${result.rating}/5 (${result.userRatingCount} avis)
-Ouvert maintenant: ${result.isOpenNow ? "oui" : "non"}
-Horaires aujourd'hui: ${result.todayHours ?? "non disponibles"}
-Tarifs: ${formatPriceLevel(result.priceLevel) ?? "non renseignés"}
+    return `Note: ${result.rating ?? "N/A"}/5 (${result.userRatingCount ?? 0} avis)
+Prix: ${formatPriceLevel(result.priceLevel)}
+Horaires aujourd'hui: ${result.todayHours ?? "non renseignés"}
+Statut: ${result.isOpenNow ? "Ouvert actuellement" : "Fermé actuellement"}
 Extrait d'un avis: ${result.topReview ?? "aucun avis disponible"}`;
   },
 };
 
 /**
- * Tableau des outils disponibles pour l'agent Gemini
- * (utilisé pour le registre dynamique et l'export des déclarations)
+ * Registre des outils locaux de l'application.
  */
-const AGENT_TOOLS: AgentTool[] = [wikipediaTool, placesTool];
+const AGENT_TOOLS: AgentTool[] = [wikipediaTool as AgentTool, placesTool];
 
 /**
- * Export unique des déclarations pour le "config.tools" de Gemini
- * À utiliser dans la configuration Gemini pour déclarer les outils disponibles
+ * Export unique configuré pour être passé directement dans le tableau `tools` du SDK Gemini.
  */
 export const toolDeclarations = {
-  functionDeclarations: AGENT_TOOLS.map((tool) => tool.declaration),
+  functionDeclarations: AGENT_TOOLS.map((t) => t.declaration),
 };
 
 /**
- * Fonction unique d'exécution dynamique d'un tool call Gemini
- *
- * @param call Objet FunctionCall Gemini (nom + args)
- * @returns Résultat textuel à restituer à l'utilisateur
- *
- * - Vérifie la présence des arguments
- * - Recherche l'outil correspondant dans le registre
- * - Exécute la fonction associée et gère les erreurs
+ * Routeur dynamique d'exécution des appels d'outils (`FunctionCall`) émis par Gemini.
+ * Intercepte les requêtes Wikipédia pour y injecter le dictionnaire de métadonnées OSM du POI courant.
+ * * @param {FunctionCall} call - Objet d'appel généré par l'IA (contenant le nom et les arguments bruts).
+ * @param {Record<string, string>} [currentPoiTags] - Optionnel : Les tags géographiques OpenStreetMap du POI analysé.
+ * @returns {Promise<string>} La réponse textuelle formatée issue de l'outil.
  */
-export async function executeToolCall(call: FunctionCall): Promise<string> {
+export async function executeToolCall(call: FunctionCall, currentPoiTags?: Record<string, string>): Promise<string> {
   if (!call.args) {
     return "Arguments manquants pour l'appel de fonction";
   }
 
-  const tool = AGENT_TOOLS.find((candidate) => candidate.declaration.name === call.name);
+  const tool = AGENT_TOOLS.find((t) => t.declaration.name === call.name);
   if (!tool) {
     return "Outil inconnu";
   }
 
   try {
-    // Cast sécurisé des arguments pour correspondre à la signature attendue
-    return await tool.execute(call.args as Record<string, unknown>);
+    const executionArgs = { ...(call.args as Record<string, unknown>) };
+
+    // Injection du dictionnaire de tags pour l'outil Wikipedia
+    if (call.name === "getWikipediaSummary" && currentPoiTags) {
+      executionArgs["tags"] = currentPoiTags;
+    }
+
+    return await tool.execute(executionArgs);
   } catch (error) {
-    logger.error("gemini", `Erreur lors de l'exécution de l'outil ${call.name}:`, error);
-    return "Erreur interne lors de l'exécution de l'outil";
+    logger.error("gemini", `Erreur d'exécution de l'outil ${call.name} :`, error);
+    return "Non disponible";
   }
 }

@@ -61,7 +61,14 @@ const CULTURAL_PREFIXES_SET = new Set(CULTURAL_TAG_PREFIXES);
 /**
  * Valeurs de tags OSM qui rendent un lieu éligible à un enrichissement Google Places (établissement public).
  */
-const PLACES_ELIGIBLE_VALUES = new Set(["museum", "restaurant", "attraction"]);
+const PLACES_ELIGIBLE_VALUES = new Set([
+  "museum",
+  "restaurant",
+  "attraction",
+  "castle", // AJOUT : Permet d'inclure les châteaux / forts ouverts au public
+  "monument", // AJOUT optionnel : Pour tester sur d'autres structures historiques
+  "historic", // AJOUT optionnel : Si tu veux ratisser large
+]);
 
 /**
  * Génère le prompt utilisateur transmis à Gemini pour chaque POI.
@@ -96,7 +103,8 @@ export function buildUserPrompt(poiName: string, coords: { lat: number; lng: num
   }
 
   // Éligibilité à l'enrichissement Google Places
-  const isPlacesEligible = PLACES_ELIGIBLE_VALUES.has(poiTags["tourism"]) || PLACES_ELIGIBLE_VALUES.has(poiTags["amenity"]);
+  const isPlacesEligible =
+    PLACES_ELIGIBLE_VALUES.has(poiTags["tourism"]) || PLACES_ELIGIBLE_VALUES.has(poiTags["amenity"]) || PLACES_ELIGIBLE_VALUES.has(poiTags["historic"]); // Prise en compte de historic: castle
 
   // Consigne spécifique pour les établissements publics
   const consigneSpecifique = isPlacesEligible
@@ -111,3 +119,28 @@ export function buildUserPrompt(poiName: string, coords: { lat: number; lng: num
 
   return `Lieu : ${poiName}\nCoordonnées GPS : ${formattedCoords}\n${tagsSection}\n${consigneSpecifique}\nGénère le message.`;
 }
+
+/**
+ * Instruction système complémentaire pour forcer le modèle à valider et consolider sa réponse sous forme de JSON strict.
+ */
+export const JSON_CONSOLIDATION_INSTRUCTION = `\nRenvoie TOUJOURS ta réponse finale au format JSON strict selon le schéma fourni. Si les informations fournies par un outil ne t'ont pas servi à enrichir le récit final, exclus cet outil de la liste.`;
+
+/**
+ * Schéma de validation structurée de la réponse finale de l'agent.
+ * Définit le format attendu par l'application cliente (PWA).
+ */
+export const RESPONSE_JSON_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    message: {
+      type: "STRING",
+      description: "Le récit fluide du lieu. Inclus impérativement l'artiste et les matériaux s'ils sont fournis dans les tags OSM.",
+    },
+    actualToolsUsed: {
+      type: "ARRAY",
+      items: { type: "STRING" },
+      description: "Les noms des outils (ex: 'getWikipediaSummary') dont les infos ont été VRAIMENT utiles pour rédiger le message.",
+    },
+  },
+  required: ["message", "actualToolsUsed"],
+};

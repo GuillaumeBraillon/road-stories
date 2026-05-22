@@ -1,201 +1,173 @@
 /**
- * Service principal d'orchestration Gemini pour Road Stories
- *
- * - Initialise et gère l'agent Gemini
- * - Prépare les prompts utilisateur enrichis
- * - Gère les appels d'outils (tool use)
- * - Gère les retries, le logging, le parsing JSON
- * - Exporte la fonction unique generateRoadMessage
+ * Orchestrateur de requêtes et de session pour le SDK Google Gen AI.
+ * Gère le cycle d'inférence interactif de l'agent : gestion des promesses,
+ * boucles d'appels d'outils avec passage de contexte, et sérialisation structurée finale en JSON.
+ * * @module services/gemini
  */
-import { GoogleGenAI } from "@google/genai";
+
+import { FunctionCallingConfigMode, GoogleGenAI } from "@google/genai";
 import type { Content, FunctionCall, GenerateContentResponse, Part } from "@google/genai";
 import { executeToolCall, toolDeclarations } from "./agentTools";
-import { SYSTEM_PROMPT } from "./prompts";
+import { SYSTEM_PROMPT, JSON_CONSOLIDATION_INSTRUCTION, RESPONSE_JSON_SCHEMA } from "./prompts";
 import { buildEnrichedUserPrompt, GOOGLE_PLACES_TOOL_NAME, markToolUsedIfUseful, prefetchGooglePlaces } from "./geminiShared";
 import { logger } from "./logger";
 import type { GeminiResult, GenerateMessageParams } from "../types/gemini.types";
 
-/**
- * Modèle Gemini utilisé (voir doc Google)
- * 'gemini-2.5-flash' ou 'gemini-3.1-flash-lite'
- */
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
-
-/**
- * Délais de retry en ms pour les appels Gemini (backoff)
- */
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
 
 let _ai: GoogleGenAI | null = null;
-/**
- * Singleton d'initialisation de l'API Gemini
- * @returns Instance GoogleGenAI
- */
+
 function getAI(): GoogleGenAI {
-  if (!_ai) _ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+  if (!_ai) {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) throw new Error("VITE_GEMINI_API_KEY non configurée.");
+    _ai = new GoogleGenAI({ apiKey });
+  }
   return _ai;
 }
 
-/**
- * Logge le nombre de tokens utilisés par Gemini (pour debug/dev)
- * @param response Réponse Gemini
- */
 function logTokens(response: GenerateContentResponse): void {
   const meta = response.usageMetadata;
   if (!meta) return;
   logger.debug("gemini", `Tokens prompt : ${meta.promptTokenCount} | Réponse : ${meta.candidatesTokenCount} | Total : ${meta.totalTokenCount}`);
 }
 
-/**
- * Type guard pour détecter les parties contenant un functionCall Gemini
- */
 function hasFunctionCall(part: Part): part is Part & { functionCall: FunctionCall } {
-  return !!part.functionCall;
+  return typeof part === "object" && part !== null && "functionCall" in part && part.functionCall !== undefined;
 }
 
-/**
- * Type utilitaire pour les parties Gemini contenant un functionCall
- */
-type FunctionCallPart = Part & { functionCall: FunctionCall };
-
-/**
- * Appelle Gemini avec gestion du retry/backoff sur erreurs réseau
- * @param params Paramètres d'appel Gemini
- * @returns Réponse Gemini
- */
-async function generateWithRetry(
-  params: Parameters<InstanceType<typeof GoogleGenAI>["models"]["generateContent"]>[0]
-): ReturnType<InstanceType<typeof GoogleGenAI>["models"]["generateContent"]> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
-    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1]));
+async function retryWithBackoff<T>(fn: () => Promise<T>): Promise<T> {
+  let attempt = 0;
+  while (true) {
     try {
-      return await getAI().models.generateContent(params);
+      return await fn();
     } catch (error) {
-      if (error instanceof Error && error.message.includes("429")) throw error; // Rate limit immédiat
-      if (error instanceof Error && error.message.includes("400")) {
-        logger.error("gemini", "Erreur Gemini 400:", error.message);
-        throw error;
-      }
-      lastError = error;
+      if (attempt >= RETRY_DELAYS_MS.length) throw error;
+      const delay = RETRY_DELAYS_MS[attempt];
+      logger.warn("gemini", `Échec d'appel de l'API (Tentative ${attempt + 1}/${RETRY_DELAYS_MS.length}). Reconnaissance dans ${delay}ms...`, error);
+      await new Promise((res) => setTimeout(res, delay));
+      attempt++;
     }
   }
-  throw lastError;
 }
 
-/**
- * Fonction principale d'orchestration Gemini pour générer un message Road Stories
- *
- * - Préfetch Google Places si besoin
- * - Génère le prompt utilisateur enrichi
- * - Appelle Gemini (1 ou 2 tours selon tool use)
- * - Gère le parsing JSON structuré
- * - Retourne le message final et la liste des outils réellement utilisés
- *
- * @param params Paramètres métier (POI, coordonnées, tags)
- * @returns GeminiResult { message, toolsUsed }
- */
 export async function generateRoadMessage(params: GenerateMessageParams): Promise<GeminiResult> {
-  // --- Mode production : délégation à l'API edge (Vercel) ---
-  if (!import.meta.env.DEV) {
-    const response = await fetch("/api/gemini", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
-    });
-    if (!response.ok) throw new Error(`Gemini Edge Function error: ${response.status}`);
-    return (await response.json()) as GeminiResult;
-  }
+  const ai = getAI();
+  const toolsUsed: string[] = [];
 
-  // --- Mode développement : tout est exécuté côté client ---
+  logger.debug("gemini", `[START] Lancement prefetch Places pour : ${params.poiName}`);
 
-  // 1. Préparation des données utilisateur (POI, coordonnées, tags)
-  const { poiName, coords, poiTags } = params;
-
-  // 2. Pré-fetch Google Places si le POI est éligible (pour enrichir le prompt)
-  const { googlePlacesData, toolsUsed } = await prefetchGooglePlaces(
-    { poiName, coords, poiTags },
-    (args) => executeToolCall({ name: GOOGLE_PLACES_TOOL_NAME, args }),
-    (error) => logger.error("gemini", "Échec du pré-fetch Google Places", error)
+  // 1. Optimisation réseau : Lancement du prefetch Google Places en parallèle
+  const { googlePlacesData, toolsUsed: prefetchTools } = await prefetchGooglePlaces(
+    params,
+    async (args) => executeToolCall({ name: GOOGLE_PLACES_TOOL_NAME, args }, params.poiTags),
+    (err) => logger.error("gemini", "Erreur lors du prefetch Google Places", err)
   );
 
-  // 3. Construction du prompt utilisateur enrichi (tags OSM + Google Places)
-  const userPrompt = buildEnrichedUserPrompt({ poiName, coords, poiTags }, googlePlacesData);
+  logger.debug("gemini", `[PREFETCH RESULT] Outils pré-activés : [${prefetchTools.join(", ")}] | Data présente : ${!!googlePlacesData}`);
+  toolsUsed.push(...prefetchTools);
 
-  // 4. Premier appel Gemini (prompt utilisateur, outils déclarés)
-  const response = await generateWithRetry({
-    model: GEMINI_MODEL,
-    contents: userPrompt,
-    config: { systemInstruction: SYSTEM_PROMPT, tools: [toolDeclarations] },
-  });
+  // 2. Assemblage du prompt enrichi
+  const userPrompt = buildEnrichedUserPrompt(params, googlePlacesData);
+  logger.debug("gemini", `[PROMPT INITIAL SENT] :\n${userPrompt}`);
 
-  logTokens(response); // Affiche le nombre de tokens consommés
+  const contents: Content[] = [{ role: "user", parts: [{ text: userPrompt }] }];
 
-  // 5. Si Gemini déclenche un ou plusieurs tool calls (functionCalls)
-  const functionCalls = response.functionCalls;
-  if (functionCalls && functionCalls.length > 0) {
-    // a. On récupère les parties contenant les appels d'outils
-    const rawFunctionCallParts = response.candidates?.[0]?.content?.parts?.filter(hasFunctionCall) ?? [];
-    const functionCallParts: FunctionCallPart[] =
-      rawFunctionCallParts.length > 0 ? rawFunctionCallParts : functionCalls.map((call) => ({ functionCall: call }));
-    const calls = functionCallParts.map((part) => part.functionCall);
-
-    // b. Exécution de tous les outils demandés par Gemini
-    const toolResults = await Promise.all(calls.map((call: FunctionCall) => executeToolCall(call)));
-
-    logger.debug(
-      "gemini",
-      `${calls.length} outil(s) appelé(s) :`,
-      calls.map((c: FunctionCall) => c.name)
-    );
-
-    // c. Marquage des outils réellement utiles (pour l'historique)
-    calls.forEach((call, index) => {
-      markToolUsedIfUseful(toolsUsed, call.name, toolResults[index]);
-    });
-
-    // d. Construction du contexte pour le second tour Gemini (tool use -> réponse finale)
-    const contents: Content[] = [
-      { role: "user", parts: [{ text: userPrompt }] },
-      { role: "model", parts: functionCallParts },
-      {
-        role: "user",
-        parts: calls.map((c: FunctionCall, i: number) => ({
-          functionResponse: { id: c.id, name: c.name, response: { output: toolResults[i] } },
-        })),
-      },
-    ];
-
-    // e. Second appel Gemini : on force la réponse en JSON structuré
-    const finalResponse = await generateWithRetry({
+  // 3. Premier tour d'inférence de l'agent
+  let response = await retryWithBackoff(() =>
+    ai.models.generateContent({
       model: GEMINI_MODEL,
       contents,
       config: {
-        systemInstruction:
-          SYSTEM_PROMPT +
-          "\nTu dois obligatoirement répondre sous forme d'un objet JSON contenant 'message' et 'actualToolsUsed'. Si les données d'un outil étaient hors-sujet (ex: homonyme), exclus cet outil de la liste.",
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT",
-          properties: {
-            message: {
-              type: "STRING",
-              description: "Le récit fluide du lieu. Inclus impérativement l'artiste et les matériaux s'ils sont fournis dans les tags OSM.",
-            },
-            actualToolsUsed: {
-              type: "ARRAY",
-              items: { type: "STRING" },
-              description: "Les noms des outils (ex: 'getWikipediaSummary') dont les infos ont été VRAIMENT utiles pour rédiger le message.",
+        systemInstruction: SYSTEM_PROMPT,
+        tools: [toolDeclarations],
+      },
+    })
+  );
+
+  logTokens(response);
+
+  let candidate = response.candidates?.[0];
+  let parts = candidate?.content?.parts || [];
+  let functionCalls = parts.filter(hasFunctionCall).map((p) => p.functionCall);
+
+  let loops = 0;
+  const MAX_LOOPS = 3;
+  let hasExecutedTools = false;
+
+  // 4. Branche réactive (Boucle multi-tours)
+  while (functionCalls.length > 0 && loops < MAX_LOOPS) {
+    hasExecutedTools = true;
+    loops++;
+    logger.debug("gemini", `[Tour Outil ${loops}] L'IA réclame ${functionCalls.length} outil(s) : ${functionCalls.map((c) => c.name).join(", ")}`);
+
+    contents.push({ role: "model", parts });
+    const toolResponseParts: Part[] = [];
+
+    for (const call of functionCalls) {
+      logger.debug("gemini", `[EXECUTE] Tool call: ${call.name}`, call.args);
+      const toolResult = await executeToolCall(call, params.poiTags);
+
+      logger.debug("gemini", `[EXECUTE RESULT] Réponse de l'outil ${call.name} (premiers caract.) : ${toolResult.substring(0, 80)}...`);
+      markToolUsedIfUseful(toolsUsed, call.name, toolResult);
+
+      toolResponseParts.push({
+        functionResponse: {
+          name: call.name,
+          response: { result: toolResult },
+        },
+      });
+    }
+
+    contents.push({ role: "user", parts: toolResponseParts });
+
+    // Ré-inférence
+    response = await retryWithBackoff(() =>
+      ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents,
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          tools: [toolDeclarations],
+        },
+      })
+    );
+
+    logTokens(response);
+
+    candidate = response.candidates?.[0];
+    parts = candidate?.content?.parts || [];
+    functionCalls = parts.filter(hasFunctionCall).map((p) => p.functionCall);
+
+    if (functionCalls.length === 0 && response.text) {
+      logger.debug("gemini", `[LOG TOURS INTERMÉDIAIRE] L'IA a arrêté les outils au tour ${loops}. Réponse brute textuelle intermédiaire : "${response.text}"`);
+    }
+  }
+
+  // 5. Deuxième passe d'inférence : Synthèse textuelle et structuration JSON stricte
+  if (hasExecutedTools || response.text) {
+    logger.debug("gemini", "Envoi des résultats d'outils pour génération finale du JSON...");
+
+    const finalResponse = await retryWithBackoff(() =>
+      ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents,
+        config: {
+          systemInstruction: SYSTEM_PROMPT + JSON_CONSOLIDATION_INSTRUCTION,
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_JSON_SCHEMA,
+          toolConfig: {
+            functionCallingConfig: {
+              mode: FunctionCallingConfigMode.NONE, // Aucune fonction ne doit être appelée à ce stade, c'est la synthèse finale
             },
           },
-          required: ["message", "actualToolsUsed"],
         },
-      },
-    });
+      })
+    );
 
     logTokens(finalResponse);
 
-    // f. Parsing sécurisé du JSON retourné par Gemini
     try {
       const parsedResult = JSON.parse(finalResponse.text ?? "{}");
       const actualToolsUsed = Array.isArray(parsedResult.actualToolsUsed) ? parsedResult.actualToolsUsed : [];
@@ -203,9 +175,8 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
         message: parsedResult.message ?? "",
         toolsUsed: [...new Set([...toolsUsed, ...actualToolsUsed])],
       };
-    } catch (error) {
-      logger.error("gemini", "Erreur lors du parsing JSON de la réponse Gemini, fallback appliqué.", error);
-      // Fallback au cas où le JSON échouerait (très rare avec Flash 3.1)
+    } catch (err) {
+      logger.error("gemini", "Échec du parsing JSON final, retour texte brut", err);
       return {
         message: finalResponse.text ?? "",
         toolsUsed,
@@ -213,7 +184,6 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
     }
   }
 
-  // 6. Cas nominal : pas de tool call, on retourne la réponse brute
   return {
     message: response.text ?? "",
     toolsUsed,
