@@ -19,13 +19,18 @@ let _ai: GoogleGenAI | null = null;
 
 function getAI(): GoogleGenAI {
   if (!_ai) {
-    const apiKey = import.meta.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-    logger.debug("[SERVER-GEMINI] Tentative de lecture de la clé API...");
+    logger.debug("gemini", "[SERVER-GEMINI] Tentative de lecture de la clé API...");
+
+    // Vercel injecte les variables via process.env
+    // On essaie une seule source, la plus fiable sur Vercel
+    const apiKey = process.env.GEMINI_API_KEY;
+
     if (!apiKey) {
-      console.error("[SERVER-GEMINI] CRITIQUE: GEMINI_API_KEY est undefined ou vide !");
+      logger.error("[SERVER-GEMINI] CRITIQUE: GEMINI_API_KEY est undefined ou vide !");
       throw new Error("GEMINI_API_KEY non configurée.");
     }
-    logger.debug("[SERVER-GEMINI] Clé API trouvée (longueur:", apiKey.length, "). Initialisation du SDK GoogleGenAI...");
+
+    logger.debug("gemini", `[SERVER-GEMINI] Clé API trouvée (longueur: ${apiKey.length}). Initialisation...`);
     _ai = new GoogleGenAI({ apiKey });
   }
   return _ai;

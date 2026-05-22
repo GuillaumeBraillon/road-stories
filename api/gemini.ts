@@ -27,6 +27,19 @@ interface GeminiApiResponse {
   error?: { code: number; message: string };
 }
 
+interface NodeRequestLike {
+  method?: string;
+  body?: unknown;
+}
+
+interface NodeResponseLike {
+  status: (code: number) => {
+    setHeader: (k: string, v: string) => NodeResponseLike;
+    send: (body: string) => void;
+  };
+  send: (body: string) => void;
+}
+
 function extractText(data: GeminiApiResponse): string {
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   const textPart = parts.find((p): p is { text: string } => "text" in p);
@@ -84,26 +97,29 @@ async function callWithRetry(apiKey: string, contents: GeminiContent[], withTool
   throw lastError;
 }
 
-export default async function handler(request: any, response?: any): Promise<Response | void> {
+export default async function handler(request: Request | NodeRequestLike, response?: NodeResponseLike): Promise<Response | void> {
   logger.debug("gemini", "[EDGE-HANDLER] 📥 Nouvelle requête reçue.");
 
   // DETECTION INFAILLIBLE : Si .json n'est pas une fonction, on est purement sous Node.js (Vercel Dev)
-  const isNodeEnvironment = typeof request.json !== "function";
+  const isNodeEnvironment = !(request instanceof Request);
 
   let method: string;
-  let rawBody: any;
+  let rawBody: unknown;
 
   if (isNodeEnvironment) {
-    method = request.method ?? "POST";
-    rawBody = request.body;
+    const nodeRequest = request as NodeRequestLike;
+    method = nodeRequest.method ?? "POST";
+    rawBody = nodeRequest.body;
   } else {
-    method = (request as Request).method;
+    method = request.method;
   }
+
+  const nodeResponse = response as NodeResponseLike | undefined;
 
   if (method !== "POST") {
     logger.error(`[EDGE-HANDLER] Méthode ${method} refusée.`);
     if (isNodeEnvironment) {
-      response.status(405).send("Method Not Allowed");
+      nodeResponse!.status(405).send("Method Not Allowed");
       return;
     }
     return new Response("Method Not Allowed", { status: 405 });
@@ -114,7 +130,7 @@ export default async function handler(request: any, response?: any): Promise<Res
     logger.error("[EDGE-HANDLER] ❌ CRITIQUE: La variable d'environnement GEMINI_API_KEY est introuvable sur Vercel !");
     const errorConfigPayload = JSON.stringify({ error: "GEMINI_API_KEY not configured" });
     if (isNodeEnvironment) {
-      response.status(500).setHeader("Content-Type", "application/json").send(errorConfigPayload);
+      nodeResponse!.status(500).setHeader("Content-Type", "application/json").send(errorConfigPayload);
       return;
     }
     return new Response(errorConfigPayload, {
@@ -135,7 +151,7 @@ export default async function handler(request: any, response?: any): Promise<Res
     logger.error("[EDGE-HANDLER] Échec du parsing JSON du Body:", jsonErr);
     const errorJsonPayload = JSON.stringify({ error: "Invalid JSON body" });
     if (isNodeEnvironment) {
-      response.status(400).setHeader("Content-Type", "application/json").send(errorJsonPayload);
+      nodeResponse!.status(400).setHeader("Content-Type", "application/json").send(errorJsonPayload);
       return;
     }
     return new Response(errorJsonPayload, {
@@ -202,7 +218,7 @@ export default async function handler(request: any, response?: any): Promise<Res
 
       const successPayload = JSON.stringify({ message: extractText(followUp), toolsUsed });
       if (isNodeEnvironment) {
-        response.status(200).setHeader("Content-Type", "application/json").send(successPayload);
+        nodeResponse!.status(200).setHeader("Content-Type", "application/json").send(successPayload);
         return;
       }
       return new Response(successPayload, {
@@ -214,22 +230,22 @@ export default async function handler(request: any, response?: any): Promise<Res
     logger.debug("gemini", "[EDGE-HANDLER] Aucun outil demandé par l'IA. Renvoi direct.");
     const directPayload = JSON.stringify({ message: extractText(data), toolsUsed });
     if (isNodeEnvironment) {
-      response.status(200).setHeader("Content-Type", "application/json").send(directPayload);
+      nodeResponse!.status(200).setHeader("Content-Type", "application/json").send(directPayload);
       return;
     }
     return new Response(directPayload, {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error("[EDGE-HANDLER] 🔥 CRASH GLOBAL SÉCURISÉ:", error);
     const errorPayload = JSON.stringify({
       error: `Gemini edge function failed`,
-      details: error?.message || String(error),
+      details: error instanceof Error ? error.message : String(error),
     });
 
     if (isNodeEnvironment) {
-      response.status(502).setHeader("Content-Type", "application/json").send(errorPayload);
+      nodeResponse!.status(502).setHeader("Content-Type", "application/json").send(errorPayload);
       return;
     }
     return new Response(errorPayload, {
