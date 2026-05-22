@@ -19,11 +19,11 @@ let _ai: GoogleGenAI | null = null;
 
 function getAI(): GoogleGenAI {
   if (!_ai) {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    const apiKey = import.meta.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
     logger.debug("[SERVER-GEMINI] Tentative de lecture de la clé API...");
     if (!apiKey) {
-      console.error("[SERVER-GEMINI] CRITIQUE: VITE_GEMINI_API_KEY est undefined ou vide !");
-      throw new Error("VITE_GEMINI_API_KEY non configurée.");
+      console.error("[SERVER-GEMINI] CRITIQUE: GEMINI_API_KEY est undefined ou vide !");
+      throw new Error("GEMINI_API_KEY non configurée.");
     }
     logger.debug("[SERVER-GEMINI] Clé API trouvée (longueur:", apiKey.length, "). Initialisation du SDK GoogleGenAI...");
     _ai = new GoogleGenAI({ apiKey });

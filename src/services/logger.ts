@@ -14,8 +14,7 @@
 // Safely access import.meta.env for environments where it might not be defined
 const env: Record<string, string | boolean | undefined> = (import.meta as ImportMeta & { env?: Record<string, string | boolean | undefined> }).env ?? {};
 
-//const isDev = env.DEV ?? false;
-const isDev = true; // Forcer le mode dev pour l'instant, à ajuster selon ton setup
+const isDev = env.DEV ?? false;
 const isDebugEnabled = env.VITE_ENABLE_DEBUG_LOGS === "true";
 
 export const logger = {
