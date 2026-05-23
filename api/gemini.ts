@@ -16,6 +16,7 @@ import { toolDeclarations, executeTool } from "./tools/index";
 import { SYSTEM_PROMPT } from "../src/services/prompts";
 import { buildEnrichedUserPrompt, GOOGLE_PLACES_TOOL_NAME, markToolUsedIfUseful, prefetchGooglePlaces } from "../src/services/geminiShared";
 import type { GenerateMessageParams } from "../src/types/gemini.types";
+import { logger } from "./logger";
 
 /**
  * Modèle Gemini utilisé pour la génération (version flash-lite).
@@ -53,6 +54,7 @@ interface GeminiApiResponse {
  * @returns Texte généré ou chaîne vide
  */
 function extractText(data: GeminiApiResponse): string {
+  logger.debug("gemini", "Raw Gemini response:", JSON.stringify(data));
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   const textPart = parts.find((p): p is { text: string } => "text" in p);
   return textPart?.text ?? "";
@@ -68,6 +70,7 @@ function extractText(data: GeminiApiResponse): string {
  */
 async function callGeminiAPI(apiKey: string, contents: GeminiContent[], withTools: boolean): Promise<GeminiApiResponse> {
   const url = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  logger.debug("gemini", `Calling Gemini API at ${url} with tools: ${withTools}`);
   const body = {
     system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
     contents,
@@ -81,6 +84,7 @@ async function callGeminiAPI(apiKey: string, contents: GeminiContent[], withTool
   });
 
   const data = (await response.json()) as GeminiApiResponse;
+  logger.debug("gemini", "Gemini API response:", JSON.stringify(data));
   if (data.error) throw new Error(`Gemini ${data.error.code}: ${data.error.message}`);
   return data;
 }
@@ -98,8 +102,10 @@ const RETRY_DELAYS_MS = [1_000, 2_000];
  * @returns Réponse Gemini
  */
 async function callWithRetry(apiKey: string, contents: GeminiContent[], withTools: boolean): Promise<GeminiApiResponse> {
+  logger.debug("gemini", `Starting Gemini call with retry (max ${RETRY_DELAYS_MS.length} retries)`);
   let lastError: unknown;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    logger.debug("gemini", `Attempt ${attempt + 1} of ${RETRY_DELAYS_MS.length + 1}`);
     if (attempt > 0) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1] as number));
     }
@@ -118,7 +124,10 @@ export default async function handler(request: Request): Promise<Response> {
     return new Response("Method Not Allowed", { status: 405 });
   }
 
+  logger.debug("gemini", "Received request with method POST");
   const apiKey = (process.env["GEMINI_API_KEY"] as string | undefined) ?? "";
+  logger.debug("gemini", `GEMINI_API_KEY is ${apiKey ? "configured" : "missing"}`);
+
   if (!apiKey) {
     return new Response(JSON.stringify({ error: "GEMINI_API_KEY not configured" }), {
       status: 500,

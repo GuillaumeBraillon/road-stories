@@ -67,9 +67,3 @@ export interface GooglePlacesPlace {
 export interface GooglePlacesTextSearchResponse {
   places?: GooglePlacesPlace[];
 }
-
-// --- Fonctions ---
-
-export type GetPlaceDetails = (name: string, lat: number, lng: number) => Promise<PlaceResult | null>;
-
-export type FormatPriceLevel = (priceLevel: GooglePriceLevel | string | null) => string | null;

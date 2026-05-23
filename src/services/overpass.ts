@@ -82,6 +82,8 @@ async function fetchOverpass(url: string, body: string): Promise<OverpassRespons
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
+    logger.debug("overpass", `→ ${url}`);
+
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -90,10 +92,21 @@ async function fetchOverpass(url: string, body: string): Promise<OverpassRespons
     });
 
     if (!response.ok) {
+      logger.debug("overpass", `✗ ${url} — HTTP ${response.status}`);
       throw new Error(`HTTP ${response.status}`);
     }
 
+    logger.debug("overpass", `✓ ${url}`);
     return response.json() as Promise<OverpassResponse>;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      logger.debug("overpass", `✗ ${url} — timeout (${REQUEST_TIMEOUT_MS}ms)`);
+      throw new Error("Timeout", { cause: error });
+    }
+    if (!(error instanceof Error && error.message.startsWith("HTTP"))) {
+      logger.debug("overpass", `✗ ${url} —`, error);
+    }
+    throw error;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -164,17 +177,15 @@ export async function getNearbyPOIs(coords: Coords, themes: Theme[], radiusMeter
       return data.elements
         .filter((el) => {
           if (!el.lat) return false;
-
           const name = resolvePoiName(el.tags ?? {});
           if (!name) return false;
-
           if (seenNames.has(name)) return false;
           seenNames.add(name);
-
           return true;
         })
         .map(nodeToPoI);
     } catch (error) {
+      // Silencieux — l'erreur est déjà loggée dans fetchOverpass
       lastError = error;
     }
   }

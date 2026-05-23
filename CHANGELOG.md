@@ -5,6 +5,22 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.16] - 2026-05-22
+
+### Added
+
+- **API Infrastructure & Logging** : Ajout d'un utilitaire léger `api/logger` et intégration de traces de débug et d'erreurs structurées au sein d' `api/gemini` et du service Overpass pour une supervision fine.
+
+### Changed
+
+- **Centralisation de l'architecture Gemini** : Simplification majeure de l'intégration de l'IA. La génération de récits est désormais entièrement déléguée au point d'entrée serveur `/api/gemini` (le service `src/services/gemini` se contente d'appeler l'API).
+- **Nettoyage du Runtime Client** : Suppression complète des implémentations d'outils et de services côté client (`src/services/agentTools.ts`, `places.ts`, `wikipedia.ts`) ainsi que de leurs types utilitaires associés afin d'alléger l'application finale.
+- **Simplification du Build (Vite & TS)** : Élimination du proxy et du plugin Vite spécifiques au développement local pour les requêtes Places. Le fichier `vite.config` utilise maintenant une configuration minimale avec les plugins React et Tailwind. Inclusion explicite du dossier `api` dans le fichier `tsconfig.node.json`.
+
+### Fixed
+
+- **Fiabilisation d'Overpass** : Amélioration de la gestion des erreurs et diagnostics des cas de timeout lors de la récupération des données cartographiques, avec suppression des logs doublons.
+
 ## [1.0.13] - 2026-05-22
 
 ### Fix
