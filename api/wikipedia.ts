@@ -135,7 +135,7 @@ export async function execute(args: Record<string, unknown>): Promise<string> {
       if (summary?.trim()) return summary;
     }
 
-    logger.warn("wikipedia", `[TOOL-WIKIPEDIA] Aucun résumé trouvé pour "${title}" après cascade complète.`);
+    logger.debug("wikipedia", `[TOOL-WIKIPEDIA] Aucun résumé trouvé pour "${title}" après cascade complète.`);
     return "Informations culturelles non disponibles.";
   } catch (error) {
     logger.error("wikipedia", `[TOOL-WIKIPEDIA] Erreur lors de l'exécution pour "${title}":`, error);
