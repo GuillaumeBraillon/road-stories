@@ -10,6 +10,8 @@
  * — Orchestration de l'appel Gemini, gestion des outils, prompt système, et enrichissement
  */
 
+export const config = { runtime: "edge" };
+
 import { toolDeclarations, executeTool } from "./tools/index";
 import { SYSTEM_PROMPT } from "../src/services/prompts";
 import { buildEnrichedUserPrompt, GOOGLE_PLACES_TOOL_NAME, markToolUsedIfUseful, prefetchGooglePlaces } from "../src/services/geminiShared";
@@ -24,7 +26,6 @@ const GEMINI_MODEL = "gemini-3.1-flash-lite";
  */
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
-type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
 /**
  * Structure d'une partie de contenu Gemini (texte, appel d'outil, ou réponse d'outil).
  */

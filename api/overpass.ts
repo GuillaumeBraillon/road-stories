@@ -11,6 +11,7 @@
  * — Gestion multi-endpoints, timeout, et fallback automatique
  */
 
+export const config = { runtime: "edge" };
 /**
  * Liste ordonnée des endpoints Overpass utilisés pour le proxy.
  */
