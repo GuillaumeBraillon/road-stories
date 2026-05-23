@@ -1,5 +1,4 @@
-/**
- * Proxy Vercel Edge Function — Overpass API
+//api/overpass.ts
 /**
  * Proxy Vercel Edge Function — Overpass API
  *
@@ -11,7 +10,10 @@
  * — Gestion multi-endpoints, timeout, et fallback automatique
  */
 
-export const config = { runtime: "edge" };
+import { logger } from "../src/services/logger";
+
+export const runtime = "edge";
+
 /**
  * Liste ordonnée des endpoints Overpass utilisés pour le proxy.
  */
@@ -29,6 +31,20 @@ const UPSTREAM_ENDPOINTS = [
  */
 const TIMEOUT_MS = 12_000;
 
+interface NodeRequestLike {
+  method?: string;
+  body?: unknown;
+  query?: Record<string, string>;
+}
+
+interface NodeResponseLike {
+  status: (code: number) => {
+    setHeader: (k: string, v: string) => NodeResponseLike;
+    send: (body: string) => void;
+  };
+  send: (body: string) => void;
+}
+
 /**
  * Tente une requête POST vers un endpoint Overpass donné, avec timeout.
  * @param url Endpoint Overpass
@@ -37,10 +53,15 @@ const TIMEOUT_MS = 12_000;
  * @throws Error si la réponse n'est pas JSON ou HTTP non 2xx
  */
 async function tryEndpoint(url: string, body: string): Promise<string> {
+  logger.debug("overpass", `[OVERPASS-WORKER] 🚀 Tentative sur l'endpoint: ${url}`);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timeoutId = setTimeout(() => {
+    logger.error("overpass", `[OVERPASS-WORKER] ⏱️ Timeout de ${TIMEOUT_MS}ms atteint pour ${url}`);
+    controller.abort();
+  }, TIMEOUT_MS);
 
   try {
+    logger.debug("overpass", `[OVERPASS-WORKER] Envoi du fetch POST vers ${url} (Taille payload: ${body.length} chars)`);
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -51,14 +72,26 @@ async function tryEndpoint(url: string, body: string): Promise<string> {
       signal: controller.signal,
     });
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    logger.debug("overpass", `[OVERPASS-WORKER] Réponse reçue de ${url} — Statut: ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
 
     const text = await response.text();
+    logger.debug("overpass", `[OVERPASS-WORKER] Début de la réponse de ${url}: ${text.slice(0, 120)}...`);
 
-    // Certains endpoints renvoient une page HTML 200 en cas de rate-limit
-    if (!text.trimStart().startsWith("{")) throw new Error("Response is not JSON");
+    // Validation stricte du format JSON (anti HTML / anti rate-limit masqué)
+    if (!text.trimStart().startsWith("{")) {
+      logger.error("overpass", `[OVERPASS-WORKER] ❌ Rejet de ${url} : Le contenu retourné n'est pas du JSON valider.`);
+      throw new Error("Response is not JSON");
+    }
 
+    logger.debug("overpass", `[OVERPASS-WORKER] ✅ Données JSON validées avec succès pour ${url}`);
     return text;
+  } catch (error: unknown) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    logger.error("overpass", `[OVERPASS-WORKER] 💥 Échec sur l'endpoint ${url} : ${errorMsg}`);
+    throw error;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -67,24 +100,101 @@ async function tryEndpoint(url: string, body: string): Promise<string> {
 /**
  * Handler principal Vercel Edge: proxy POST vers Overpass, multi-endpoints, fallback.
  * @param request Requête HTTP entrante
+ * @param response Réponse Node.js optionnelle pour le dev local
  * @returns Réponse HTTP avec le JSON Overpass ou erreur
  */
-export default async function handler(request: Request): Promise<Response> {
-  if (request.method !== "POST") {
+export default async function handler(request: Request | NodeRequestLike, response?: NodeResponseLike): Promise<Response | void> {
+  logger.debug("overpass", "[OVERPASS-HANDLER] 📥 Nouvelle requête reçue sur le proxy Overpass.");
+
+  // DETECTION RUNTIME : Si ce n'est pas une instance de Request, on est sous Node.js (Vercel Dev)
+  const isNodeEnvironment = !(request instanceof Request);
+  logger.debug(
+    "overpass",
+    `[OVERPASS-HANDLER] Mode d'exécution détecté : ${isNodeEnvironment ? "Node.js (Vercel Dev Local)" : "Edge Runtime (Vercel Production)"}`
+  );
+
+  let method: string;
+  let rawBody: unknown;
+
+  if (isNodeEnvironment) {
+    const nodeRequest = request as NodeRequestLike;
+    method = nodeRequest.method ?? "POST";
+    rawBody = nodeRequest.body;
+    logger.debug("overpass", `[OVERPASS-HANDLER] Inspection du rawBody Node d'entrée — Type: ${typeof rawBody}`);
+  } else {
+    method = request.method;
+  }
+
+  const nodeResponse = response as NodeResponseLike | undefined;
+
+  if (method !== "POST") {
+    logger.error("overpass", `[OVERPASS-HANDLER] ❌ Méthode HTTP ${method} refusée. Seul le POST est autorisé.`);
+    if (isNodeEnvironment && nodeResponse) {
+      nodeResponse.status(405).send("Method Not Allowed");
+      return;
+    }
     return new Response("Method Not Allowed", { status: 405 });
   }
 
-  const body = await request.text();
+  let bodyStr = "";
 
   try {
-    const data = await Promise.any(UPSTREAM_ENDPOINTS.map((url) => tryEndpoint(url, body)));
+    if (isNodeEnvironment) {
+      // Cas où la CLI vercel dev a intercepté et parsé le x-www-form-urlencoded en objet clé/valeur
+      if (rawBody && typeof rawBody === "object") {
+        const record = rawBody as Record<string, string>;
+        logger.debug("overpass", `[OVERPASS-HANDLER] Parsing du body objet. Clés détectées: [${Object.keys(record).join(", ")}]`);
+
+        if (record["data"]) {
+          logger.debug("overpass", "[OVERPASS-HANDLER] Clé 'data' isolée trouvée dans l'objet. Extraction de la requête Overpass QL.");
+          bodyStr = `data=${encodeURIComponent(record["data"])}`;
+        } else {
+          logger.debug("overpass", "[OVERPASS-HANDLER] Reconstruction complète de la chaîne urlencoded depuis l'objet multi-clés.");
+          bodyStr = Object.keys(record)
+            .map((key) => `${key}=${encodeURIComponent(record[key] ?? "")}`)
+            .join("&");
+        }
+      } else if (typeof rawBody === "string") {
+        logger.debug("overpass", "[OVERPASS-HANDLER] Le body fourni en environnement Node est déjà une string brute.");
+        bodyStr = rawBody;
+      }
+    } else {
+      logger.debug("overpass", "[OVERPASS-HANDLER] Lecture du flux de texte asynchrone (Web API Request.text)...");
+      bodyStr = await (request as Request).text();
+    }
+
+    logger.debug("overpass", `[OVERPASS-HANDLER] Longueur finale de la chaîne Overpass QL à envoyer : ${bodyStr.length} caractères.`);
+    if (!bodyStr || bodyStr.trim() === "") {
+      throw new Error("Le corps de la requête HTTP (body) est totalement vide ou introuvable.");
+    }
+
+    logger.debug("overpass", `[OVERPASS-HANDLER] 🔀 Lancement en parallèle de Promise.any() sur les ${UPSTREAM_ENDPOINTS.length} endpoints Overpass...`);
+    const data = await Promise.any(UPSTREAM_ENDPOINTS.map((url) => tryEndpoint(url, bodyStr)));
+
+    logger.debug("overpass", "[OVERPASS-HANDLER] 🎉 Succès global : Un des endpoints a répondu valablement. Renvoi du JSON au client.");
+
+    if (isNodeEnvironment && nodeResponse) {
+      logger.debug("overpass", "[OVERPASS-HANDLER] Émission du résultat via l'objet de réponse de l'environnement local Node.");
+      nodeResponse.status(200).setHeader("Content-Type", "application/json").send(data);
+      return;
+    }
+
     return new Response(data, {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (err) {
+  } catch (err: unknown) {
     const message = err instanceof AggregateError ? err.errors.map(String).join(" | ") : String(err);
-    return new Response(JSON.stringify({ error: `All Overpass endpoints failed: ${message}` }), {
+    logger.error("overpass", `[OVERPASS-HANDLER] 🔥 ÉCHEC CRITIQUE : Tous les endpoints Overpass ont échoué ou ont expiré. Détails : ${message}`);
+
+    const errorPayload = JSON.stringify({ error: `All Overpass endpoints failed: ${message}` });
+
+    if (isNodeEnvironment && nodeResponse) {
+      nodeResponse.status(502).setHeader("Content-Type", "application/json").send(errorPayload);
+      return;
+    }
+
+    return new Response(errorPayload, {
       status: 502,
       headers: { "Content-Type": "application/json" },
     });

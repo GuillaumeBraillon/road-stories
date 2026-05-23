@@ -5,6 +5,25 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.17] - 2026-05-22
+
+Centralize Wikipedia tool; improve Overpass proxy
+
+### Added
+
+- **Centralized Wikipedia Endpoint & Tool**: Création d'un point d'entrée unique `api/wikipedia.ts` exposant à la fois un handler HTTP (compatible avec le Runtime Edge et `vercel dev` sous Node) pour les tests cURL/Postman, et la logique d'exécution pour le Function Calling de Gemini.
+- **Cascade de recherche Wikipédia**: Implémentation d'une stratégie de repli automatique combinant l'API REST officielle (extraction directe du résumé) et l'Action API (recherche textuelle par mot-clé en cas de discordance de casse ou de titre).
+
+### Changed
+
+- **Refactorisation de l'Outil Wikipédia**: Remplacement complet de `api/tools/wikipedia.ts` pour en faire un pont épuré qui réexporte la déclaration et délègue l'exécution directement à la logique centralisée du nouvel endpoint.
+- **Instrumentation d'Overpass**: Refactorisation de `api/overpass.ts` pour basculer sur le runtime Edge, ajouter une validation stricte du format JSON, et intégrer de nombreuses traces `logger.debug` facilitant le suivi du cycle de vie des requêtes.
+- **Compatibilité Multi-Runtime (Overpass)**: Ajout du support bivalent Node/Edge dans le proxy Overpass pour intercepter les objets requêtes de la CLI `vercel dev`, décoder proprement les payloads `application/x-www-form-urlencoded` locaux et éviter les crashs sur `request.text()`.
+
+### Fixed
+
+- **Résilience des Endpoints Overpass**: Uniformisation du mécanisme de fallback multi-serveurs avec `Promise.any` et renvoi systématique de payloads d'erreur structurés en JSON (statut HTTP `502`) au lieu de figer l'interface en cas de coupure des services amont.
+
 ## [1.0.16] - 2026-05-22
 
 ### Added
