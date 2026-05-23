@@ -5,7 +5,7 @@
  * Supporte le Function Calling Gemini et les requêtes HTTP directes (Postman).
  */
 
-import { logger } from "../src/services/logger";
+import { logger } from "./logger";
 
 export const runtime = "edge";
 
