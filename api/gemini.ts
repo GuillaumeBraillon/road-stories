@@ -179,11 +179,9 @@ async function callWithRetry(apiKey: string, contents: GeminiContent[], config: 
 // --- Handler ---
 
 export default async function handler(request: Request): Promise<Response> {
-  if (request.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405 });
-  }
+  logger.debug("gemini API", "📥 Nouvelle requête reçue sur le proxy Gemini.");
+  if (request.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
-  logger.debug("gemini API", "Received request with method POST");
   const apiKey = (process.env["GEMINI_API_KEY"] as string | undefined) ?? "";
   logger.debug("gemini API", `GEMINI_API_KEY is ${apiKey ? "configured" : "missing"}`);
 

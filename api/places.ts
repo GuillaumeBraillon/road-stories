@@ -5,6 +5,7 @@ import type {
   PlaceResult,
   GooglePlacesPlace,
 } from "../src/types/places.types";
+import { logger } from "./logger.js";
 /**
  * Vercel Edge Function — Proxy Google Places
  *
@@ -38,6 +39,7 @@ const MAX_RESULT_COUNT = 1;
  * @returns Texte de l'avis ou null
  */
 function normalizeTopReview(place: GooglePlacesPlace): string | null {
+  logger.debug("places API", `Normalisation de l'avis : ${place.reviews ?? "Unnamed Place"}`);
   const reviews = Array.isArray(place.reviews) ? place.reviews : [];
   if (reviews.length === 0) return null;
 
@@ -82,9 +84,8 @@ function toPlaceResult(place: GooglePlacesPlace): PlaceResult {
 export default async function handler(request: Request): Promise<Response> {
   try {
     // Changement ici : On accepte uniquement le GET
-    if (request.method !== "GET") {
-      return new Response("Method Not Allowed", { status: 405 });
-    }
+    logger.debug("places API", "📥 Nouvelle requête reçue sur le proxy Google Places.");
+    if (request.method !== "GET") return new Response("Method Not Allowed", { status: 405 });
 
     // Récupération des paramètres de l'URL (?name=...&lat=...&lng=...)
     const { searchParams } = new URL(request.url);
@@ -101,6 +102,8 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+    logger.debug("place API", `GOOGLE_PLACES_API_KEY is ${apiKey ? "configured" : "missing"}`);
+
     if (!apiKey) throw new Error("GOOGLE_PLACES_API_KEY not configured");
 
     // Calcul mathématique du rectangle (requis par Google pour locationRestriction)
@@ -135,6 +138,7 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const data = (await upstreamResponse.json()) as GooglePlacesTextSearchResponse;
+    logger.debug("places API", `Réponse Google Places reçue avec ${data.places?.length ?? 0} résultat(s).`);
     const firstPlace = data.places?.[0];
 
     if (!firstPlace) {
@@ -146,6 +150,7 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     const result = toPlaceResult(firstPlace);
+    logger.debug("places API", `Résultat normalisé prêt à être envoyé au client: ${JSON.stringify(result)}`);
 
     // En-tête de cache magique pour Vercel (24h sur le CDN global)
     return new Response(JSON.stringify(result), {

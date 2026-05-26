@@ -9,7 +9,7 @@
  * — Gestion multi-endpoints, timeout, et fallback automatique
  */
 
-import { logger } from "./logger";
+import { logger } from "./logger.js";
 
 export const runtime = "edge";
 
