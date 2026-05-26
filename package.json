@@ -1,13 +1,13 @@
 {
   "name": "road-stories",
   "private": true,
-  "version": "1.0.17",
+  "version": "1.0.18",
   "type": "module",
   "scripts": {
-    "dev": "vite",
     "dev:vercel": "set -a; . ./.env.local; set +a; vercel dev",
     "build": "tsc -b && vite build",
     "fix": "npm run format && npm run lint:fix && npm run tsc",
+    "dev": "vite",
     "preview": "vite preview",
     "lint:fix": "eslint . --ext ts,tsx --fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",

@@ -1,7 +1,5 @@
 /**
  * Vercel Edge Function — Gemini AI
-/**
- * Vercel Edge Function — Gemini AI
  *
  * Implémentation via l'API REST Gemini (fetch natif) — aucune dépendance npm.
  * Compatible Vercel Edge Runtime. La clé GEMINI_API_KEY reste côté serveur.
@@ -13,10 +11,9 @@
 export const config = { runtime: "edge" };
 
 import { toolDeclarations, executeTool } from "./tools/index";
-import { SYSTEM_PROMPT } from "../src/services/prompts";
-import { buildEnrichedUserPrompt, GOOGLE_PLACES_TOOL_NAME, markToolUsedIfUseful, prefetchGooglePlaces } from "../src/services/geminiShared";
+import { SYSTEM_PROMPT, JSON_CONSOLIDATION_INSTRUCTION, RESPONSE_JSON_SCHEMA, buildUserPrompt } from "../src/services/prompts";
 import type { GenerateMessageParams } from "../src/types/gemini.types";
-import { logger } from "./logger";
+import { logger } from "./logger.js";
 
 /**
  * Modèle Gemini utilisé pour la génération (version flash-lite).
@@ -26,6 +23,8 @@ const GEMINI_MODEL = "gemini-3.1-flash-lite";
  * URL de base de l'API Gemini REST.
  */
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+const RETRY_DELAYS_MS = [1_000, 2_000];
+const GOOGLE_PLACES_TOOL_NAME = "getPlaceDetails";
 
 /**
  * Structure d'une partie de contenu Gemini (texte, appel d'outil, ou réponse d'outil).
@@ -48,13 +47,77 @@ interface GeminiApiResponse {
   error?: { code: number; message: string };
 }
 
+interface GeminiCallConfig {
+  systemInstruction: string;
+  withTools?: boolean;
+  responseMimeType?: string;
+  responseSchema?: unknown;
+}
+
+// --- Helpers inlinés (anciennement geminiShared) ---
+
+function isUsefulToolResult(result: string | undefined): result is string {
+  if (!result) return false;
+  return (
+    result !== "Non disponible" &&
+    result !== "Informations Google Places non disponibles pour ce lieu" &&
+    !result.startsWith("Erreur") &&
+    !result.startsWith("Arguments manquants")
+  );
+}
+
+function markToolUsedIfUseful(toolsUsed: string[], toolName: string | undefined, result: string | undefined): void {
+  if (toolName && isUsefulToolResult(result) && !toolsUsed.includes(toolName)) {
+    toolsUsed.push(toolName);
+  }
+}
+
+function shouldPrefetchGooglePlaces(poiTags: Record<string, string>): boolean {
+  return !!(poiTags["amenity"] || poiTags["shop"] || poiTags["tourism"] || poiTags["craft"]);
+}
+
+async function prefetchGooglePlaces(params: GenerateMessageParams): Promise<{ googlePlacesData: string; toolsUsed: string[] }> {
+  const toolsUsed: string[] = [];
+
+  if (!shouldPrefetchGooglePlaces(params.poiTags)) {
+    return { googlePlacesData: "Non cherché", toolsUsed };
+  }
+
+  try {
+    const result = await executeTool(GOOGLE_PLACES_TOOL_NAME, {
+      name: params.poiName,
+      lat: params.coords.lat,
+      lng: params.coords.lng,
+    });
+    markToolUsedIfUseful(toolsUsed, GOOGLE_PLACES_TOOL_NAME, result);
+    return { googlePlacesData: result || "Non disponible", toolsUsed };
+  } catch {
+    return { googlePlacesData: "Non disponible", toolsUsed };
+  }
+}
+
+function buildEnrichedUserPrompt(params: GenerateMessageParams, googlePlacesData: string): string {
+  let userPrompt = buildUserPrompt(params.poiName, params.coords, params.poiTags);
+  userPrompt += `\n\nDonnées Google Places réelles trouvées : ${googlePlacesData}`;
+  userPrompt += "\nNote: Si un avis marquant ou une excellente note est présent, intègre-le de manière naturelle dans ton récit.";
+
+  if (params.poiTags["tourism"] === "artwork" || params.poiTags["artwork_type"]) {
+    userPrompt += `\n\nCONSIGNES IMPÉRATIVES POUR CETTE ŒUVRE D'ART :
+- Si le tag 'artist_name' est présent (${params.poiTags["artist_name"] || "non"}), tu DOIS obligatoirement citer le nom de l'artiste dans ton récit.
+- Si le tag 'material' est présent (${params.poiTags["material"] || "non"}), tu DOIS obligatoirement mentionner le matériau utilisé (ex: métal, bronze, pierre).`;
+  }
+
+  return userPrompt;
+}
+
+// --- API Gemini ---
 /**
  * Extrait le texte généré par Gemini à partir de la réponse API.
  * @param data Réponse brute Gemini
  * @returns Texte généré ou chaîne vide
  */
 function extractText(data: GeminiApiResponse): string {
-  logger.debug("gemini", "Raw Gemini response:", JSON.stringify(data));
+  logger.debug("gemini API", "Extraction du texte généré à partir de la réponse Gemini...");
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   const textPart = parts.find((p): p is { text: string } => "text" in p);
   return textPart?.text ?? "";
@@ -68,13 +131,14 @@ function extractText(data: GeminiApiResponse): string {
  * @returns Réponse brute Gemini
  * @throws Error en cas d'erreur API
  */
-async function callGeminiAPI(apiKey: string, contents: GeminiContent[], withTools: boolean): Promise<GeminiApiResponse> {
+async function callGeminiAPI(apiKey: string, contents: GeminiContent[], config: GeminiCallConfig): Promise<GeminiApiResponse> {
   const url = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-  logger.debug("gemini", `Calling Gemini API at ${url} with tools: ${withTools}`);
+  logger.debug("gemini API", `Calling Gemini API with tools: ${config.withTools ? "enabled" : "disabled"}`);
   const body = {
-    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    system_instruction: { parts: [{ text: config.systemInstruction }] },
     contents,
-    ...(withTools ? { tools: [{ function_declarations: toolDeclarations.functionDeclarations }] } : {}),
+    ...(config.withTools ? { tools: [{ function_declarations: toolDeclarations.functionDeclarations }] } : {}),
+    ...(config.responseMimeType ? { generationConfig: { responseMimeType: config.responseMimeType, responseSchema: config.responseSchema } } : {}),
   };
 
   const response = await fetch(url, {
@@ -84,15 +148,9 @@ async function callGeminiAPI(apiKey: string, contents: GeminiContent[], withTool
   });
 
   const data = (await response.json()) as GeminiApiResponse;
-  logger.debug("gemini", "Gemini API response:", JSON.stringify(data));
   if (data.error) throw new Error(`Gemini ${data.error.code}: ${data.error.message}`);
   return data;
 }
-
-/**
- * Délais de retry (ms) en cas d'échec temporaire Gemini.
- */
-const RETRY_DELAYS_MS = [1_000, 2_000];
 
 /**
  * Appelle Gemini avec retry automatique sur erreurs réseau/serveur.
@@ -101,16 +159,15 @@ const RETRY_DELAYS_MS = [1_000, 2_000];
  * @param withTools Active les outils Gemini
  * @returns Réponse Gemini
  */
-async function callWithRetry(apiKey: string, contents: GeminiContent[], withTools: boolean): Promise<GeminiApiResponse> {
-  logger.debug("gemini", `Starting Gemini call with retry (max ${RETRY_DELAYS_MS.length} retries)`);
+async function callWithRetry(apiKey: string, contents: GeminiContent[], config: GeminiCallConfig): Promise<GeminiApiResponse> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
-    logger.debug("gemini", `Attempt ${attempt + 1} of ${RETRY_DELAYS_MS.length + 1}`);
+    logger.debug("gemini API", `Attempt ${attempt + 1} of ${RETRY_DELAYS_MS.length + 1}`);
     if (attempt > 0) {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1] as number));
     }
     try {
-      return await callGeminiAPI(apiKey, contents, withTools);
+      return await callGeminiAPI(apiKey, contents, config);
     } catch (error) {
       if (error instanceof Error && error.message.includes("429")) throw error;
       lastError = error;
@@ -119,14 +176,16 @@ async function callWithRetry(apiKey: string, contents: GeminiContent[], withTool
   throw lastError;
 }
 
+// --- Handler ---
+
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
   }
 
-  logger.debug("gemini", "Received request with method POST");
+  logger.debug("gemini API", "Received request with method POST");
   const apiKey = (process.env["GEMINI_API_KEY"] as string | undefined) ?? "";
-  logger.debug("gemini", `GEMINI_API_KEY is ${apiKey ? "configured" : "missing"}`);
+  logger.debug("gemini API", `GEMINI_API_KEY is ${apiKey ? "configured" : "missing"}`);
 
   if (!apiKey) {
     return new Response(JSON.stringify({ error: "GEMINI_API_KEY not configured" }), {
@@ -145,14 +204,22 @@ export default async function handler(request: Request): Promise<Response> {
     });
   }
 
-  const { poiName, coords, poiTags } = params;
-  const { googlePlacesData, toolsUsed } = await prefetchGooglePlaces({ poiName, coords, poiTags }, (args) => executeTool(GOOGLE_PLACES_TOOL_NAME, args));
-  const userPrompt = buildEnrichedUserPrompt({ poiName, coords, poiTags }, googlePlacesData);
-
-  const userContents: GeminiContent[] = [{ role: "user", parts: [{ text: userPrompt }] }];
-
   try {
-    const data = await callWithRetry(apiKey, userContents, true);
+    // 1. Prefetch Google Places si le POI est éligible
+    logger.debug("gemini API", `Démarrage du préfetch Google Places pour le POI: ${params.poiName}`);
+    const { googlePlacesData, toolsUsed } = await prefetchGooglePlaces(params);
+
+    // 2. Construction du prompt enrichi
+    logger.debug("gemini API", "Construction du prompt utilisateur enrichi avec les données préfetchées...");
+    const userPrompt = buildEnrichedUserPrompt(params, googlePlacesData);
+    const contents: GeminiContent[] = [{ role: "user", parts: [{ text: userPrompt }] }];
+
+    // 3. Premier tour — avec outils
+    logger.debug("gemini API", "Premier appel à Gemini avec outils activés...");
+    const data = await callWithRetry(apiKey, contents, {
+      systemInstruction: SYSTEM_PROMPT,
+      withTools: true,
+    });
 
     const parts = data.candidates?.[0]?.content?.parts ?? [];
     const functionCallParts = parts.filter(
@@ -160,17 +227,20 @@ export default async function handler(request: Request): Promise<Response> {
     );
     const functionCalls = functionCallParts.map((part) => part.functionCall);
 
+    // 4. Si Gemini a appelé des outils → second tour de consolidation JSON
+    logger.debug("gemini API", `Gemini a effectué ${functionCalls.length} appels d'outils.`);
     if (functionCalls.length > 0) {
       const toolResults = await Promise.all(functionCalls.map((call) => executeTool(call.name, call.args)));
+
       functionCalls.forEach((call, index) => {
         markToolUsedIfUseful(toolsUsed, call.name, toolResults[index]);
       });
 
       const toolContents: GeminiContent[] = [
-        ...userContents,
+        ...contents,
         {
           role: "model",
-          // Important: conserver les functionCall bruts renvoyés par Gemini (thought_signature, etc.).
+          // Conserver les functionCall bruts renvoyés par Gemini (thought_signature, etc.)
           parts: functionCallParts,
         },
         {
@@ -184,22 +254,39 @@ export default async function handler(request: Request): Promise<Response> {
           })),
         },
       ];
-      const followUp = await callGeminiAPI(apiKey, toolContents, false);
-      return new Response(JSON.stringify({ message: extractText(followUp), toolsUsed }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
+
+      // Second tour : consolidation JSON stricte, outils désactivés
+      logger.debug("gemini API", "Lancement du second appel à Gemini pour consolidation JSON, avec les résultats d'outils...");
+      const followUp = await callWithRetry(apiKey, toolContents, {
+        systemInstruction: SYSTEM_PROMPT + JSON_CONSOLIDATION_INSTRUCTION,
+        withTools: false,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_JSON_SCHEMA,
       });
+
+      try {
+        const parsed = JSON.parse(extractText(followUp) ?? "{}");
+        logger.debug("gemini API", "Texte de consolidation JSON extrait de Gemini:", parsed);
+        const actualToolsUsed = Array.isArray(parsed.actualToolsUsed) ? parsed.actualToolsUsed : [];
+        logger.debug("gemini API", `Outils réellement utilisés selon Gemini : ${actualToolsUsed.join(", ")}`);
+        return new Response(
+          JSON.stringify({
+            message: parsed.message ?? "",
+            toolsUsed: [...new Set([...toolsUsed, ...actualToolsUsed])],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      } catch {
+        // Fallback si le parsing JSON échoue
+        return new Response(JSON.stringify({ message: extractText(followUp), toolsUsed }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
     }
 
-    return new Response(JSON.stringify({ message: extractText(data), toolsUsed }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    // 5. Cas nominal : pas de tool call, retour direct
+    logger.debug("gemini API", "Aucun appel d'outil effectué par Gemini, retour du message généré directement.");
+    return new Response(JSON.stringify({ message: extractText(data), toolsUsed }), { status: 200, headers: { "Content-Type": "application/json" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return new Response(JSON.stringify({ error: `Gemini failed: ${message}` }), {
-      status: 502,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify({ error: `Gemini failed: ${message}` }), { status: 502, headers: { "Content-Type": "application/json" } });
   }
 }

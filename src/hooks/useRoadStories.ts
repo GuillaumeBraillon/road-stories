@@ -165,7 +165,7 @@ export function useRoadStories(
 
       try {
         // 1. Vérification de la position et de l'état de lecture
-        logger.debug("tick", "coords:", coordsRef.current, "speaking:", isSpeakingRef.current);
+        logger.debug("useRoadStories", "coords:", coordsRef.current, "speaking:", isSpeakingRef.current);
         if (!coordsRef.current || isSpeakingRef.current) return;
 
         // 2. Gestion du cache Overpass (évite les requêtes inutiles)
@@ -184,14 +184,14 @@ export function useRoadStories(
           pois = await getNearbyPOIs(currentCoords, themesRef.current, settingsRef.current.detectionRadiusM);
           overpassCache.current = { coords: currentCoords, themesKey, pois };
           logger.debug(
-            "tick",
+            "useRoadStories",
             `${pois.length} POI(s) trouvés`,
             pois.map((p) => p.name)
           );
         } else {
           pois = cache.pois;
           logger.debug(
-            "tick",
+            "useRoadStories",
             `${pois.length} POI(s) en cache`,
             pois.map((p) => p.name)
           );
@@ -202,14 +202,14 @@ export function useRoadStories(
         for (const poi of pois) {
           if (hasTriggeredPOI(poi.id)) continue; // déjà traité
           if (shouldSkipPOI(poi.tags)) {
-            logger.debug("tick", "POI ignoré :", poi.name || "Sans nom");
+            logger.debug("useRoadStories", "POI ignoré :", poi.name || "Sans nom");
             markPOITriggered(poi.id);
             continue;
           }
           newPOI = poi;
           break;
         }
-        logger.debug("tick", "Nouveau POI :", newPOI?.name ?? "aucun");
+        logger.debug("useRoadStories", "Nouveau POI :", newPOI?.name ?? "aucun");
 
         // 4. Aucun POI pertinent trouvé
         if (!newPOI) {
@@ -223,13 +223,13 @@ export function useRoadStories(
         didStartSpeaking = true;
         setCurrentPOIName(newPOI.name);
 
-        logger.debug("tick", "Gemini...");
+        logger.debug("useRoadStories", "Génération du message IA pour le POI :", newPOI.name);
         const { message, toolsUsed } = await generateRoadMessage({
           poiName: newPOI.name,
           coords: { lat: newPOI.lat, lng: newPOI.lng },
           poiTags: newPOI.tags,
         });
-        logger.debug("tick", "Message :", message);
+        logger.debug("useRoadStories", "Message IA généré :", message, "Outils utilisés :", toolsUsed);
 
         // 6. Historisation et affichage
         markPOITriggered(newPOI.id);
@@ -239,7 +239,7 @@ export function useRoadStories(
         setActiveStatus("speaking");
         if (!isMutedRef.current) await speak(message);
       } catch (error) {
-        logger.error("Road Stories error:", error);
+        logger.error("useRoadStories", error);
         if (!didStartSpeaking) setActiveStatus("listening");
       } finally {
         isTickRunning.current = false;

@@ -5,7 +5,33 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.17] - 2026-05-22
+## [1.0.18] - 2026-05-26
+
+### Refactor Gemini flow, Overpass proxy & logs
+
+#### Added
+
+- **Robustesse API & Retries** : Introduction d'une stratégie de retry automatique avec backoff exponentiel (`RETRY_DELAYS_MS = [1000, 2000]`) sur l'API Gemini pour atténuer les erreurs réseau intermittentes.
+- **Mémorisation d'État UI** : Ajout d'une synchronisation d'état synchrone (pattern _state fallback_ durant la phase de render) dans `App.tsx` pour figer le titre du POI à l'écran tant que son anecdote est affichée, éliminant tout clignotement visuel au changement de statut de la machine à états.
+
+#### Changed
+
+- **Architecture Gemini (Edge Function)** : Refactoring complet du handler d'API pour centraliser la logique. Les utilitaires de validation et d'analyse comportementale de `src/services/geminiShared.ts` ont été inlinés directement dans `api/gemini.ts` (`shouldPrefetchGooglePlaces`, `prefetchGooglePlaces`, `buildEnrichedUserPrompt`).
+- **Consolidation JSON Stricte** : Séparation claire du cycle Gemini en deux étapes distinctes : un premier tour dynamique avec déclaration d'outils activée (`withTools: true`), suivi d'un second tour de consolidation JSON stricte (`responseMimeType: "application/json"`) exploitant un schéma de validation typé (`RESPONSE_JSON_SCHEMA`).
+- **Détection d'Environnement multi-critères** : Durcissement du calcul de `isDev` dans le logger serveur pour intercepter correctement les workers locaux instanciés sous `vercel dev` (détection du flag `process.env.VERCEL === "1"` et du pattern de région dynamique `NOW_REGION.startsWith("dev")`).
+- **Proxy et Stratégie Overpass** : Centralisation des requêtes géographiques côté client vers l'unique endpoint `/api/overpass`. Optimisation du parallélisme HTTP via un mécanisme `Promise.any()` exécuté sur 6 serveurs miroirs Overpass distincts pour garantir la résilience de la récupération des données OSM.
+- **UI & Polissage** : Ajustement cosmétique mineur avec déplacement de l'affichage de la version de l'application (`v{__APP_VERSION__}`) au sein du header principal.
+
+#### Removed
+
+- **Code Mort** : Suppression définitive du fichier devenu obsolète `src/services/geminiShared.ts`, l'intégralité des types et interfaces étant désormais interfacée avec le fichier global `src/types/gemini.types`.
+
+#### Miscellaneous
+
+- Réorganisation de l'ordre des scripts de cycle de vie (notamment le script `dev`) au sein du fichier `package.json`.
+- Standardisation globale de l'affichage et de la granularité des logs de niveau `[DEBUG]` et `[ERROR]` partagés entre les services client et serveur.
+
+## [1.0.17] - 2026-05-23
 
 Centralize Wikipedia tool; improve Overpass proxy
 
@@ -24,7 +50,7 @@ Centralize Wikipedia tool; improve Overpass proxy
 
 - **Résilience des Endpoints Overpass**: Uniformisation du mécanisme de fallback multi-serveurs avec `Promise.any` et renvoi systématique de payloads d'erreur structurés en JSON (statut HTTP `502`) au lieu de figer l'interface en cas de coupure des services amont.
 
-## [1.0.16] - 2026-05-22
+## [1.0.16] - 2026-05-23
 
 ### Added
 

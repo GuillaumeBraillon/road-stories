@@ -5,7 +5,7 @@
  * Supporte le Function Calling Gemini et les requêtes HTTP directes (Postman).
  */
 
-import { logger } from "./logger";
+import { logger } from "./logger.js";
 
 export const runtime = "edge";
 
@@ -85,25 +85,24 @@ async function searchPageTitle(keyword: string, signal: AbortSignal): Promise<st
 }
 
 /**
- * Récupération du résumé par titre exact (REST API)
+ * Récupération du résumé par titre exact (TOOL-WIKIPEDIA)
  */
 async function fetchSummaryByTitle(pageTitle: string, signal: AbortSignal): Promise<string | null> {
-  logger.debug("wikipedia", `[REST API] Tentative de récupération du résumé pour "${pageTitle}"`);
+  logger.debug("wikipedia", `[TOOL-WIKIPEDIA] Tentative de récupération du résumé pour "${pageTitle}"`);
   const slug = pageTitle.replace(/ /g, "_");
   try {
     const response = await fetch(`${WIKIPEDIA_REST_API}/${encodeURIComponent(slug)}`, {
       headers: { "User-Agent": "RoadStories/1.0" },
       signal,
     });
-    logger.debug("wikipedia", `[REST API] Réponse pour "${pageTitle}" — Statut: ${response.status}`);
+    logger.debug("wikipedia", `[TOOL-WIKIPEDIA] Réponse pour "${pageTitle}" — Statut: ${response.status}`);
     if (!response.ok) return null;
     const data = (await response.json()) as WikipediaRestSummary;
-    logger.debug("wikipedia", `[REST API] Données reçues pour "${pageTitle}":`, data);
+    logger.debug("wikipedia", `[TOOL-WIKIPEDIA] Données reçues pour "${pageTitle}"`);
     if (data.type === "disambiguation") return null;
-    logger.debug("wikipedia", `[REST API] Résumé extrait pour "${pageTitle}":`, data.extract);
     return data.extract ?? null;
   } catch (error) {
-    logger.error("wikipedia", `[REST API] Échec du résumé pour "${pageTitle}":`, error);
+    logger.error("wikipedia", `[TOOL-WIKIPEDIA] Échec du résumé pour "${pageTitle}":`, error);
     return null;
   }
 }

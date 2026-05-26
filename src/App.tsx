@@ -181,6 +181,26 @@ function App() {
   );
 
   /**
+   * État persistant pour verrouiller le titre du POI à l'écran.
+   * On accepte string, undefined ET null pour correspondre exactement aux types du hook.
+   */
+  const [[prevPOIName, displayedPOIName], setPOIState] = useState<[string | undefined | null, string]>([undefined, ""]);
+
+  // Alignement synchrone pendant la phase de render
+  if (currentPOIName !== prevPOIName) {
+    if (currentPOIName) {
+      // Un nouveau POI arrive : on met à jour la valeur courante et le titre affiché
+      setPOIState([currentPOIName, currentPOIName]);
+    } else if (!currentMessage) {
+      // Tout est vidé (reset/stop) : on nettoie complètement
+      setPOIState([currentPOIName, ""]);
+    } else {
+      // currentPOIName passe à null/undefined mais l'anecdote est là :
+      // On met à jour le témoin pour stopper le if, tout en conservant le titre actuel
+      setPOIState([currentPOIName, displayedPOIName]);
+    }
+  }
+  /**
    * Active/désactive un sous-thème donné (checkbox dans le panneau Thèmes).
    */
 
@@ -213,9 +233,7 @@ function App() {
       <div className="w-full max-w-sm flex items-center justify-between">
         <div className="flex flex-col">
           <h1 className="text-3xl font-bold tracking-tight">Road Stories</h1>
-          <span className="text-xs text-gray-500">v{__APP_VERSION__}</span>
-        </div>
-        <div className="flex items-center gap-1">
+          {/* Affiche le bouton d'installation PWA si disponible */}
           {isInstallable && (
             <button
               onClick={install}
@@ -225,6 +243,10 @@ function App() {
               <span className="hidden sm:inline">Installer</span>
             </button>
           )}
+          {/* Affiche la version de l'application (injectée à la build) */}
+          <span className="text-xs text-gray-500">v{__APP_VERSION__}</span>
+        </div>
+        <div className="flex items-center gap-1">
           {/* Bouton réglages */}
           <button onClick={() => setIsSettingsPanelOpen(true)} className="text-2xl p-2 rounded-full hover:bg-gray-800 transition-colors" aria-label="Réglages">
             ⚙️
@@ -246,7 +268,8 @@ function App() {
       {/* Message courant (anecdote en cours de lecture) */}
       {currentMessage && (
         <div className="w-full max-w-sm bg-gray-800 rounded-xl p-4 flex flex-col gap-2">
-          {currentPOIName && <p className="text-gray-400 text-xs font-medium uppercase tracking-wide">{currentPOIName}</p>}
+          {/* Utilisation du nom tamponné pour persister le titre à l'écran */}
+          {displayedPOIName && <p className="text-gray-400 text-xs font-medium uppercase tracking-wide">{displayedPOIName}</p>}
           <p className="text-white text-sm leading-relaxed">{currentMessage}</p>
           <div className="self-end mt-1">
             <ToolBadges tools={currentToolsUsed} />

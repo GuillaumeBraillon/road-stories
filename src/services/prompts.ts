@@ -54,14 +54,36 @@ Si les informations disponibles sont "Non disponible", appuie-toi sur les tags O
 Réponds uniquement avec le texte à lire à voix haute.`;
 
 /**
- * Ensemble optimisé pour tester la présence d'un préfixe culturel dans les tags OSM.
+ * Instruction complémentaire pour forcer la réponse en JSON structuré (second tour Gemini).
  */
+export const JSON_CONSOLIDATION_INSTRUCTION = `\nRenvoie TOUJOURS ta réponse finale au format JSON strict selon le schéma fourni. Si les informations fournies par un outil ne t'ont pas servi à enrichir le récit final, exclus cet outil de la liste.`;
+
+/**
+ * Schéma de validation de la réponse finale de l'agent (second tour Gemini).
+ */
+export const RESPONSE_JSON_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    message: {
+      type: "STRING",
+      description: "Le récit fluide du lieu. Inclus impérativement l'artiste et les matériaux s'ils sont fournis dans les tags OSM.",
+    },
+    actualToolsUsed: {
+      type: "ARRAY",
+      items: { type: "STRING" },
+      description: "Les noms des outils (ex: 'getWikipediaSummary') dont les infos ont été VRAIMENT utiles pour rédiger le message.",
+    },
+  },
+  required: ["message", "actualToolsUsed"],
+};
+
 const CULTURAL_PREFIXES_SET = new Set(CULTURAL_TAG_PREFIXES);
 
 /**
- * Valeurs de tags OSM qui rendent un lieu éligible à un enrichissement Google Places (établissement public).
+ * Valeurs de tags OSM qui rendent un lieu éligible à un enrichissement Google Places.
+ * Couvre les établissements visitables : musées, châteaux, monuments, attractions, restaurants.
  */
-const PLACES_ELIGIBLE_VALUES = new Set(["museum", "restaurant", "attraction"]);
+const PLACES_ELIGIBLE_VALUES = new Set(["museum", "restaurant", "attraction", "castle", "monument", "historic"]);
 
 /**
  * Génère le prompt utilisateur transmis à Gemini pour chaque POI.
@@ -81,24 +103,23 @@ export function buildUserPrompt(poiName: string, coords: { lat: number; lng: num
 
   // Filtrage des tags OSM pertinents pour la culture
   const relevantTags = Object.entries(poiTags)
-    .filter(([key]) => {
-      const mainPrefix = key.split(":")[0];
-      return CULTURAL_PREFIXES_SET.has(mainPrefix);
-    })
+    .filter(([key]) => CULTURAL_PREFIXES_SET.has(key.split(":")[0]))
     .map(([key, value]) => `- ${key}: ${value}`)
     .join("\n");
 
   const tagsSection = `Tags OpenStreetMap disponibles :\n${relevantTags || "- aucun tag culturel exploitable"}`;
 
-  // Cas particulier : le nom du POI est une inscription gravée
+  // Cas particulier : inscription gravée
   if (poiTags["inscription"] === poiName) {
     return `Un monument se trouve à proximité — coordonnées GPS : ${formattedCoords}\n${tagsSection}\nCe monument porte l'inscription gravée : "${poiName}"\nTraduis et explique cette inscription en 2-3 phrases orales naturelles. Ne nomme pas le monument — concentre-toi sur ce que signifie l'inscription.\nGénère le message.`;
   }
 
-  // Éligibilité à l'enrichissement Google Places
-  const isPlacesEligible = PLACES_ELIGIBLE_VALUES.has(poiTags["tourism"]) || PLACES_ELIGIBLE_VALUES.has(poiTags["amenity"]);
+  // Éligibilité Google Places : tourism, amenity ou historic
+  const isPlacesEligible =
+    PLACES_ELIGIBLE_VALUES.has(poiTags["tourism"] ?? "") ||
+    PLACES_ELIGIBLE_VALUES.has(poiTags["amenity"] ?? "") ||
+    PLACES_ELIGIBLE_VALUES.has(poiTags["historic"] ?? "");
 
-  // Consigne spécifique pour les établissements publics
   const consigneSpecifique = isPlacesEligible
     ? `\nRÈGLE DE RÉDACTION IMPÉRATIVE (Établissement public) :
 - Utilise l'outil Google Places pour obtenir les détails réels.

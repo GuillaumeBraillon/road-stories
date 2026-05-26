@@ -2,21 +2,21 @@ import type { Coords, POI, Theme } from "../types";
 import { logger } from "./logger";
 
 /**
- * Liste ordonnée des endpoints Overpass utilisés pour récupérer les POI.
- * Le proxy edge ("/api/overpass") est prioritaire en production pour éviter les erreurs CORS.
- * Les autres sont des miroirs publics, le dernier (overpass-api.de) est réservé au dev local (CORS bloqué en prod).
- */
-const OVERPASS_ENDPOINTS = [
-  "/api/overpass", // Vercel Edge proxy (production — évite les erreurs CORS)
-  "https://overpass.kumi.systems/api/interpreter",
-  "https://overpass.private.coffee/api/interpreter",
-  "https://overpass-api.de/api/interpreter", // dev local uniquement (CORS bloqué en production)
-];
-
-/**
  * Timeout maximum pour chaque requête Overpass (en millisecondes).
  */
 const REQUEST_TIMEOUT_MS = 10_000;
+
+/**
+ * Noms explicites trop génériques pour être utiles (infrastructure routière OSM sans identité culturelle).
+ * Permet d'exclure les POI sans identité culturelle.
+ */
+const GENERIC_NAMES = new Set(["tunnel", "route", "chemin", "rue", "avenue", "passage", "carrefour", "échangeur", "bretelle", "virage", "col"]);
+
+/**
+ * Filtres OSM toujours actifs, indépendamment des thèmes sélectionnés.
+ * Permet de toujours récupérer les points d'information touristique.
+ */
+const ALWAYS_ACTIVE_FILTERS = ['"tourism"="information"'];
 
 /**
  * Structure d'un nœud OSM tel que retourné par Overpass.
@@ -82,7 +82,7 @@ async function fetchOverpass(url: string, body: string): Promise<OverpassRespons
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    logger.debug("overpass", `→ ${url}`);
+    logger.debug("overpass SERVICE", `→ ${url}`);
 
     const response = await fetch(url, {
       method: "POST",
@@ -92,31 +92,25 @@ async function fetchOverpass(url: string, body: string): Promise<OverpassRespons
     });
 
     if (!response.ok) {
-      logger.debug("overpass", `✗ ${url} — HTTP ${response.status}`);
+      logger.debug("overpass SERVICE", `✗ ${url} — HTTP ${response.status}`);
       throw new Error(`HTTP ${response.status}`);
     }
 
-    logger.debug("overpass", `✓ ${url}`);
+    logger.debug("overpass SERVICE", `✓ ${url}`);
     return response.json() as Promise<OverpassResponse>;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      logger.debug("overpass", `✗ ${url} — timeout (${REQUEST_TIMEOUT_MS}ms)`);
+      logger.debug("overpass SERVICE", `✗ ${url} — timeout (${REQUEST_TIMEOUT_MS}ms)`);
       throw new Error("Timeout", { cause: error });
     }
     if (!(error instanceof Error && error.message.startsWith("HTTP"))) {
-      logger.debug("overpass", `✗ ${url} —`, error);
+      logger.debug("overpass SERVICE", `✗ ${url} —`, error);
     }
     throw error;
   } finally {
     clearTimeout(timeoutId);
   }
 }
-
-/**
- * Noms explicites trop génériques pour être utiles (infrastructure routière OSM sans identité culturelle).
- * Permet d'exclure les POI sans identité culturelle.
- */
-const GENERIC_NAMES = new Set(["tunnel", "route", "chemin", "rue", "avenue", "passage", "carrefour", "échangeur", "bretelle", "virage", "col"]);
 
 /**
  * Résout le nom d'affichage d'un nœud OSM.
@@ -144,12 +138,6 @@ function resolvePoiName(tags: Record<string, string>): string | null {
 }
 
 /**
- * Filtres OSM toujours actifs, indépendamment des thèmes sélectionnés.
- * Permet de toujours récupérer les points d'information touristique.
- */
-const ALWAYS_ACTIVE_FILTERS = ['"tourism"="information"'];
-
-/**
  * Récupère les POI à proximité d'une position, selon les thèmes actifs et le rayon.
  *
  * - Construit dynamiquement la requête Overpass en combinant les filtres OSM des thèmes actifs
@@ -166,29 +154,22 @@ export async function getNearbyPOIs(coords: Coords, themes: Theme[], radiusMeter
   const themeFilters = themes.filter((t) => t.enabled).flatMap((t) => t.osmFilters);
   const allFilters = [...new Set([...ALWAYS_ACTIVE_FILTERS, ...themeFilters])];
   const query = buildQuery(coords.lat, coords.lng, radiusMeters, allFilters);
-  logger.debug("overpass", "Query :\n" + query);
 
-  let lastError: unknown;
+  logger.debug("overpass SERVICE", "Requête envoyée au proxy Edge:\n" + query);
 
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      const data = await fetchOverpass(endpoint, `data=${encodeURIComponent(query)}`);
-      const seenNames = new Set<string>();
-      return data.elements
-        .filter((el) => {
-          if (!el.lat) return false;
-          const name = resolvePoiName(el.tags ?? {});
-          if (!name) return false;
-          if (seenNames.has(name)) return false;
-          seenNames.add(name);
-          return true;
-        })
-        .map(nodeToPoI);
-    } catch (error) {
-      // Silencieux — l'erreur est déjà loggée dans fetchOverpass
-      lastError = error;
-    }
-  }
+  // Appel unique et direct à ton proxy serveur (fini la boucle)
+  const data = await fetchOverpass("/api/overpass", `data=${encodeURIComponent(query)}`);
 
-  throw new Error(`Tous les endpoints Overpass ont échoué : ${String(lastError)}`);
+  const seenNames = new Set<string>();
+
+  return data.elements
+    .filter((el) => {
+      if (!el.lat) return false;
+      const name = resolvePoiName(el.tags ?? {});
+      if (!name) return false;
+      if (seenNames.has(name)) return false;
+      seenNames.add(name);
+      return true;
+    })
+    .map(nodeToPoI);
 }

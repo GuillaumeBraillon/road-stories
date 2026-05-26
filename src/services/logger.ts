@@ -38,15 +38,15 @@ export const logger = {
   /**
    * Warnings (uniquement en dev)
    */
-  warn: (...args: unknown[]) => {
-    if (isDev) console.warn(...args);
+  warn: (namespace: string, ...args: unknown[]) => {
+    if (isDev) console.warn(`[WARN ${namespace}]`, ...args);
   },
 
   /**
    * Erreurs (toujours affichées pour monitoring)
    */
-  error: (...args: unknown[]) => {
-    console.error(...args);
+  error: (namespace: string, ...args: unknown[]) => {
+    console.error(`[ERROR ${namespace}]`, ...args);
   },
 
   /**
