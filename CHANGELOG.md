@@ -5,7 +5,31 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.19] - 2026-05-26
+## [1.0.20] - 2026-05-26
+
+### Refactor `useRoadStories` et `poiFilter`
+
+Refactorisation majeure de l'orchestration et de la logique de filtrage.
+
+#### 🚀 `useRoadStories`
+
+- **Orchestration & Cycle de vie** : Réorganisation complète des états et des `refs` pour une gestion plus fine du runtime.
+- **Fiabilité** : Ajout de la gestion du `Wake Lock` (maintien de l'écran actif) et correction définitive de la boucle infinie de rendu via une machine à états locale (forme fonctionnelle de `setState`).
+- **Coordination Audio/Mute** : Mise en place d'une synchronisation robuste entre le bouton Mute et la synthèse vocale (`tts`) avec annulation immédiate sans crash.
+- **Logs & Débogage** : Intégration de logs techniques détaillés sur le cycle `tick` (début, éligibilité, sélection, erreurs réseau).
+- **Robustesse** : Ajout de `early returns` (gardes), vérifications strictes de la distance (`moveThreshold`) et immunisation des réglages via `useRef` pour éviter les redéclenchements de l'effet principal.
+- **Géolocalisation** : Ajout de logs d'erreurs dédiés pour le capteur GPS.
+
+#### 🔍 `poiFilter`
+
+- **Traçabilité** : Ajout de l'import `logger` et modification de `shouldSkipPOI` pour accepter un `poiName` optionnel.
+- **Debug explicite** : Émission de logs détaillés pour chaque décision d'acceptation ou de rejet, incluant la raison technique (`isAdministrativePOI`, `Manque de contexte`, etc.).
+- **Configuration** : Inclusion de `"theme_park"` dans les catégories éligibles aux outils IA (`TOOL_SUPPORTED_CATEGORIES`).
+
+#### ⚙️ `SettingsPanel`
+
+- **Ergonomie** : Déplacement du sélecteur "Intervalle de scan" pour une meilleure cohérence de l'interface.
+- **Débogage** : Ajout d'une option `0 mètre` dans le seuil de déplacement pour permettre des tests de détection en situation statique.
 
 ### Fix
 

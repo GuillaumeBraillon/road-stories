@@ -24,21 +24,6 @@ export function SettingsPanel({ isOpen, onClose, settings, onChange }: SettingsP
     <BottomSheet isOpen={isOpen} onClose={onClose} title="Réglages">
       <div className="flex flex-col gap-6">
         <SettingSelect
-          label="Intervalle de scan"
-          description="Fréquence à laquelle l'app cherche des POIs à proximité."
-          value={settings.pollIntervalMs}
-          onChange={(v) => onChange({ ...settings, pollIntervalMs: v })}
-          options={[
-            { value: 10_000, label: "10 secondes" },
-            { value: 20_000, label: "20 secondes" },
-            { value: 30_000, label: "30 secondes (défaut)" },
-            { value: 45_000, label: "45 secondes" },
-            { value: 60_000, label: "60 secondes" },
-            { value: 90_000, label: "90 secondes" },
-            { value: 120_000, label: "120 secondes" },
-          ]}
-        />
-        <SettingSelect
           label="Rayon de détection"
           description="Distance autour de votre position dans laquelle les POIs sont cherchés."
           value={settings.detectionRadiusM}
@@ -54,11 +39,27 @@ export function SettingsPanel({ isOpen, onClose, settings, onChange }: SettingsP
           ]}
         />
         <SettingSelect
+          label="Intervalle de scan"
+          description="Fréquence à laquelle l'app cherche des POIs à proximité."
+          value={settings.pollIntervalMs}
+          onChange={(v) => onChange({ ...settings, pollIntervalMs: v })}
+          options={[
+            { value: 10_000, label: "10 secondes" },
+            { value: 20_000, label: "20 secondes" },
+            { value: 30_000, label: "30 secondes (défaut)" },
+            { value: 45_000, label: "45 secondes" },
+            { value: 60_000, label: "60 secondes" },
+            { value: 90_000, label: "90 secondes" },
+            { value: 120_000, label: "120 secondes" },
+          ]}
+        />
+        <SettingSelect
           label="Seuil de déplacement"
           description="Distance minimale à parcourir avant de relancer une recherche Overpass."
           value={settings.overpassMoveThresholdM}
           onChange={(v) => onChange({ ...settings, overpassMoveThresholdM: v })}
           options={[
+            { value: 0, label: "0 mètre (Test)" },
             { value: 50, label: "50 mètres" },
             { value: 100, label: "100 mètres (défaut)" },
             { value: 200, label: "200 mètres" },

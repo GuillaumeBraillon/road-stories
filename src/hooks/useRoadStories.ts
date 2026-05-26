@@ -1,12 +1,13 @@
 /**
  * Hook useRoadStories
  *
- * Orchestrateur principal de la logique métier Road Stories:
- * - Activation/désactivation du mode
- * - Surveillance GPS, requêtes Overpass, filtrage POI
- * - Génération de message IA (Gemini), synthèse vocale
- * - Gestion du statut, historique, mute, etc.
- * Retourne tous les états et callbacks nécessaires à l’UI.
+ * Orchestrateur principal de la logique métier de l'application Road Stories.
+ * Responsabilités :
+ * - Gestion du cycle de vie du mode conduite (ON/OFF) via un intervalle régulier (polling tick).
+ * - Interrogation du proxy Overpass Edge en fonction de la position GPS actuelle et des thèmes actifs.
+ * - Sélection, filtrage et déduplication du POI le plus pertinent à proximité.
+ * - Requête à l'API Gemini Edge pour générer un récit audio culturel enrichi d'outils.
+ * - Gestion de la synthèse vocale (TTS) asynchrone avec coupure réactive au Mute et au OFF.
  */
 import { useState, useEffect, useRef } from "react";
 import type { AppSettings, AppStatus, Coords, POI, PoiHistoryEntry, Theme } from "../types";
@@ -19,255 +20,310 @@ import { logger } from "../services/logger";
 import { usePoiHistory } from "./usePoiHistory";
 import { shouldSkipPOI } from "../services/poiFilter";
 
+/**
+ * Hook personnalisé orchestrant la détection des POI, l'appel à l'IA et la restitution audio.
+ *
+ * @param themes Liste des thèmes culturels configurés dans l'application.
+ * @param settings Paramètres généraux de l'application (intervalles, rayons, etc.).
+ * @returns Un objet contenant les états réactifs de l'UI et les fonctions de contrôle.
+ */
 export function useRoadStories(
   themes: Theme[],
   settings: AppSettings
 ): {
+  /** Mode conduite activé (ON) ou désactivé (OFF) */
   isActive: boolean;
+  /** Callback pour basculer le mode conduite */
   setIsActive: (value: boolean) => void;
+  /** Statut interne de la machine à états de l'orchestrateur */
   status: AppStatus;
+  /** Nom du point d'intérêt actuellement traité */
   currentPOIName: string | null;
+  /** Contenu textuel de l'anecdote culturelle générée par Gemini */
   currentMessage: string | null;
+  /** Liste des outils (Wikipedia, Google Places) invoqués par l'agent */
   currentToolsUsed: string[];
+  /** État du mode silencieux */
   isMuted: boolean;
+  /** Callback pour basculer le mode silencieux */
   setIsMuted: (value: boolean) => void;
+  /** Historique complet des POI déclenchés au cours de la session */
   history: PoiHistoryEntry[];
+  /** Supprime une entrée spécifique de l'historique par son index */
   deleteHistoryEntry: (index: number) => void;
 } {
-  // --- État principal de l'orchestrateur ---
-
-  /**
-   * Mode ON/OFF de l'application (contrôle global)
-   */
-  const [isActive, setIsActive] = useState(false);
-
-  /**
-   * Statut métier courant (hors idle) : listening, searching, generating, speaking, no-poi
-   */
-  const [activeStatus, setActiveStatus] = useState<Exclude<AppStatus, "idle">>("listening");
-
-  /**
-   * Nom du POI en cours de traitement (affiché dans l'UI)
-   */
+  // --- États Réactifs UI ---
+  const [isActive, setIsActive] = useState<boolean>(false);
+  const [status, setStatus] = useState<AppStatus>("listening");
   const [currentPOIName, setCurrentPOIName] = useState<string | null>(null);
-
-  /**
-   * Message généré par l'IA pour le POI courant
-   */
   const [currentMessage, setCurrentMessage] = useState<string | null>(null);
-
-  /**
-   * Liste des outils IA utilisés pour générer le message (Gemini, Wikipedia, etc)
-   */
   const [currentToolsUsed, setCurrentToolsUsed] = useState<string[]>([]);
+  const [isMuted, setIsMuted] = useState<boolean>(false);
 
-  /**
-   * Mode muet (empêche la synthèse vocale)
-   */
-  const [isMuted, setIsMuted] = useState(false);
-
-  /**
-   * Historique des POI déclenchés et callbacks associés
-   */
+  // --- Gestion de l'Historique ---
   const { history, addHistoryEntry, deleteHistoryEntry, hasTriggeredPOI, markPOITriggered } = usePoiHistory();
 
-  /**
-   * Statut global calculé (idle si OFF, sinon status métier)
-   */
-  const status: AppStatus = isActive ? activeStatus : "idle";
+  // --- Capteur de Géolocalisation Réactif ---
+  const { coords, error: geoError } = useGeolocation();
 
-  /**
-   * Coordonnées GPS courantes (null si non dispo)
-   */
-  const { coords } = useGeolocation();
+  // --- Verrous Technologiques (Refs de synchronisation) ---
+  const isTickRunning = useRef<boolean>(false);
+  const isSpeakingRef = useRef<boolean>(false);
+  const isMutedRef = useRef<boolean>(false);
+  const isMutedTransitionRef = useRef<boolean>(false);
+  const lastTriggeredCoordsRef = useRef<Coords | null>(null);
 
-  // --- Références persistantes pour éviter les problèmes de closure dans les effets ---
-
-  /**
-   * Indique si la synthèse vocale est en cours (évite les interruptions)
-   */
-  const isSpeakingRef = useRef(false);
-  /**
-   * Indique si un tick métier est en cours (évite les boucles concurrentes)
-   */
-  const isTickRunning = useRef(false);
-  /**
-   * Dernières coordonnées GPS connues
-   */
-  const coordsRef = useRef<Coords | null>(null);
-  /**
-   * Thèmes actifs courants (pour détection de changement)
-   */
+  // --- Sauvegarde des configurations pour immuniser le useEffect principal contre les re-renders ---
+  const settingsRef = useRef<AppSettings>(settings);
   const themesRef = useRef<Theme[]>(themes);
-  /**
-   * Cache Overpass local (évite les requêtes réseau inutiles)
-   */
-  const overpassCache = useRef<{ coords: Coords; themesKey: string; pois: POI[] } | null>(null);
-  /**
-   * Mode muet courant (pour accès dans les callbacks)
-   */
-  const isMutedRef = useRef(false);
-  /**
-   * Réglages courants (pour accès dans les callbacks)
-   */
-  const settingsRef = useRef(settings);
 
-  // --- Synchronisation des références persistantes ---
-
-  // Met à jour la référence de coordonnées à chaque changement
   useEffect(() => {
-    coordsRef.current = coords;
-  }, [coords]);
+    settingsRef.current = settings;
+  }, [settings]);
 
-  // Met à jour la référence de thèmes à chaque changement
   useEffect(() => {
     themesRef.current = themes;
   }, [themes]);
 
-  // Met à jour la référence muet à chaque changement
+  // --- Synchronisation du bouton MUTE avec action immédiate sur le récit en cours ---
   useEffect(() => {
     isMutedRef.current = isMuted;
-    if (isMuted) stop(); // coupe la voix si mute activé
+
+    if (isMuted && isSpeakingRef.current) {
+      logger.debug("useRoadStories", "🔕 [BOUTON MUTE] Interruption sonore immédiate du récit en cours de lecture.");
+      isMutedTransitionRef.current = true;
+      stop();
+    } else {
+      logger.debug("useRoadStories", `État Mute synchronisé : ${isMuted ? "🔕 ACTIF" : "🔊 INACTIF"}`);
+    }
   }, [isMuted]);
 
-  // Met à jour la référence de réglages à chaque changement et invalide le cache
+  // --- Effet Principal : Boucle d'Exécution Temporisée (Polling Core) ---
   useEffect(() => {
-    settingsRef.current = settings;
-    overpassCache.current = null;
-  }, [settings]);
-
-  // --- Effet principal : boucle métier tant que l'app est active ---
-  useEffect(() => {
-    if (!isActive) return;
-
-    // Wake Lock : empêche la mise en veille de l'écran pendant la conduite
-    let wakeLock: WakeLockSentinel | null = null;
-    navigator.wakeLock
-      ?.request("screen")
-      .then((wl) => {
-        wakeLock = wl;
-      })
-      .catch(() => {});
+    if (!isActive) {
+      logger.debug("useRoadStories", "Mode inactif détecté (OFF). Boucle de polling non instanciée.");
+      return;
+    }
 
     /**
-     * Tick métier :
-     * - Vérifie la position, l'état de lecture, le cache
-     * - Déclenche une requête Overpass si besoin (mouvement ou changement de thèmes)
-     * - Filtre les POI (anti-doublon, exclusion, contexte)
-     * - Génère le message IA (Gemini)
-     * - Lance la synthèse vocale
-     * - Met à jour l'historique et l'état
+     * Machine à états locale : encapsulée ici pour éviter les warnings de dépendance ESLint.
+     */
+    const setActiveStatusLocal = (newStatus: AppStatus) => {
+      setStatus((currentStatus) => {
+        if (currentStatus === newStatus) return currentStatus;
+        return newStatus;
+      });
+      // Log en dehors du updater — exécuté une seule fois
+      logger.debug("useRoadStories", `Changement de statut machine : ➡️ ${newStatus}`);
+    };
+
+    let wakeLock: WakeLockSentinel | null = null;
+
+    const requestWakeLock = async () => {
+      if ("wakeLock" in navigator) {
+        try {
+          wakeLock = await navigator.wakeLock.request("screen");
+          logger.debug("useRoadStories", "🔒 Screen Wake Lock activé avec succès.");
+        } catch (err) {
+          logger.warn("useRoadStories", "Échec de l'activation du Wake Lock:", err);
+        }
+      }
+    };
+    void requestWakeLock();
+
+    /**
+     * Cœur d'exécution de la boucle d'analyse géographique.
      */
     const tick = async () => {
-      if (isTickRunning.current) return;
+      logger.debug("useRoadStories", `[TICK START] Vérification d'état - isTickRunning: ${isTickRunning.current}, isSpeaking: ${isSpeakingRef.current}`);
+
+      if (isTickRunning.current || isSpeakingRef.current) {
+        logger.debug("useRoadStories", "🛑 Arrêt du tick : Un traitement réseau ou audio est déjà en cours d'exécution.");
+        return;
+      }
+
+      if (!coords) {
+        logger.debug("useRoadStories", "⏳ Arrêt du tick : En attente de coordonnées GPS valides de la part du capteur.");
+        return;
+      }
+
       isTickRunning.current = true;
-      let didStartSpeaking = false;
 
       try {
-        // 1. Vérification de la position et de l'état de lecture
-        logger.debug("useRoadStories", "coords:", coordsRef.current, "speaking:", isSpeakingRef.current);
-        if (!coordsRef.current || isSpeakingRef.current) return;
+        const currentSettings = settingsRef.current;
+        const currentThemes = themesRef.current;
 
-        // 2. Gestion du cache Overpass (évite les requêtes inutiles)
-        const currentCoords = coordsRef.current;
-        const themesKey = themesRef.current
-          .filter((t) => t.enabled)
-          .map((t) => t.id)
-          .join(",");
-        const cache = overpassCache.current;
-        const hasMoved = !cache || calculateDistance(currentCoords, cache.coords) > settingsRef.current.overpassMoveThresholdM;
-        const themesChanged = !cache || cache.themesKey !== themesKey;
+        const minDistanceBetweenStories = currentSettings.overpassMoveThresholdM;
+        const searchRadius = currentSettings.detectionRadiusM;
 
-        let pois: POI[];
-        if (hasMoved || themesChanged) {
-          setActiveStatus("searching");
-          pois = await getNearbyPOIs(currentCoords, themesRef.current, settingsRef.current.detectionRadiusM);
-          overpassCache.current = { coords: currentCoords, themesKey, pois };
+        logger.debug(
+          "useRoadStories",
+          `⚙️ Configuration chargée - Seuil de déplacement requis : ${minDistanceBetweenStories}m | Rayon de recherche : ${searchRadius}m`
+        );
+
+        if (lastTriggeredCoordsRef.current) {
+          const distanceSinceLastStory = calculateDistance(coords, lastTriggeredCoordsRef.current);
           logger.debug(
             "useRoadStories",
-            `${pois.length} POI(s) trouvés`,
-            pois.map((p) => p.name)
+            `Distance calculée depuis le dernier POI historique : ${distanceSinceLastStory.toFixed(1)}m (Seuil requis : ${minDistanceBetweenStories}m)`
           );
-        } else {
-          pois = cache.pois;
-          logger.debug(
-            "useRoadStories",
-            `${pois.length} POI(s) en cache`,
-            pois.map((p) => p.name)
-          );
-        }
 
-        // 3. Filtrage métier (anti-doublon, exclusion, contexte)
-        let newPOI: POI | undefined;
-        for (const poi of pois) {
-          if (hasTriggeredPOI(poi.id)) continue; // déjà traité
-          if (shouldSkipPOI(poi.tags)) {
-            logger.debug("useRoadStories", "POI ignoré :", poi.name || "Sans nom");
-            markPOITriggered(poi.id);
-            continue;
+          if (distanceSinceLastStory < minDistanceBetweenStories) {
+            logger.debug("useRoadStories", "⏭️ Rayon de déplacement insuffisant par rapport au seuil utilisateur. Fin du tick.");
+            return;
           }
-          newPOI = poi;
-          break;
         }
-        logger.debug("useRoadStories", "Nouveau POI :", newPOI?.name ?? "aucun");
 
-        // 4. Aucun POI pertinent trouvé
-        if (!newPOI) {
-          setActiveStatus("no-poi");
+        setActiveStatusLocal("searching");
+
+        logger.debug("useRoadStories", `Appel Overpass aux coordonnées lat: ${coords.lat}, lng: ${coords.lng} (Rayon: ${searchRadius}m)`);
+        const pois = await getNearbyPOIs(coords, currentThemes, searchRadius);
+
+        logger.debug(
+          "useRoadStories",
+          `${pois.length} POI(s) brut(s) extrait(s) :`,
+          pois.map((p) => p.name)
+        );
+
+        if (pois.length === 0) {
+          logger.debug("useRoadStories", "😴 Aucun point d'intérêt trouvé dans le périmètre actuel.");
+          setActiveStatusLocal("listening");
           return;
         }
 
-        // 5. Génération du message IA et lecture vocale
-        isSpeakingRef.current = !isMutedRef.current;
-        setActiveStatus("generating");
-        didStartSpeaking = true;
+        // --- Filtrage centralisé et traçabilité claire ---
+        const eligiblePOIs: POI[] = [];
+
+        for (const poi of pois) {
+          if (hasTriggeredPOI(poi.id)) {
+            logger.debug("useRoadStories", `❌ POI Ignoré [Déjà entendu au cours de la session] ➡️ "${poi.name}" (ID: ${poi.id})`);
+            continue;
+          }
+          if (shouldSkipPOI(poi.tags, poi.name)) {
+            continue; // Le log explicite du rejet est délégué à shouldSkipPOI
+          }
+          eligiblePOIs.push(poi);
+        }
+
+        logger.debug("useRoadStories", `📊 Bilan zone : ${eligiblePOIs.length} POI(s) éligible(s) sur ${pois.length} brut(s).`);
+
+        if (eligiblePOIs.length === 0) {
+          logger.debug("useRoadStories", "⏭️ Fin du tick : Aucun POI de la zone n'est valide ou disponible.");
+          setActiveStatusLocal("listening");
+          return;
+        }
+
+        // Selection du plus proche
+        const candidatePOIs = eligiblePOIs
+          .map((poi) => ({
+            poi,
+            distance: calculateDistance(coords, { lat: poi.lat, lng: poi.lng }),
+          }))
+          .sort((a, b) => a.distance - b.distance);
+
+        const target = candidatePOIs[0];
+        const newPOI = target.poi;
+
+        logger.debug("useRoadStories", `🎯 POI Cible sélectionné : "${newPOI.name}" (${target.distance.toFixed(1)}m).`);
         setCurrentPOIName(newPOI.name);
 
-        logger.debug("useRoadStories", "Génération du message IA pour le POI :", newPOI.name);
+        // Appel Génération IA
         const { message, toolsUsed } = await generateRoadMessage({
           poiName: newPOI.name,
           coords: { lat: newPOI.lat, lng: newPOI.lng },
           poiTags: newPOI.tags,
         });
-        logger.debug("useRoadStories", "Message IA généré :", message, "Outils utilisés :", toolsUsed);
 
-        // 6. Historisation et affichage
+        // Mutation historique et refs
         markPOITriggered(newPOI.id);
-        addHistoryEntry({ poiId: newPOI.id, poiName: newPOI.name, message, toolsUsed, timestamp: new Date() });
+        addHistoryEntry({
+          poiId: newPOI.id,
+          poiName: newPOI.name,
+          message,
+          toolsUsed,
+          timestamp: new Date(),
+        });
+
+        lastTriggeredCoordsRef.current = coords;
         setCurrentMessage(message);
         setCurrentToolsUsed(toolsUsed);
-        setActiveStatus("speaking");
-        if (!isMutedRef.current) await speak(message);
+
+        // Sortie audio
+        if (!isMutedRef.current) {
+          isSpeakingRef.current = true;
+          setActiveStatusLocal("speaking");
+          await speak(message);
+          isSpeakingRef.current = false;
+        } else {
+          logger.debug("useRoadStories", "🔕 Mode Mute actif à la fin de la génération : Affichage texte pur sans voix.");
+        }
+
+        if (isMutedTransitionRef.current) {
+          logger.debug("useRoadStories", "ℹ️ Récit interrompu par l'utilisateur via le bouton Mute. Préservation des textes à l'écran.");
+          isMutedTransitionRef.current = false;
+          setActiveStatusLocal("listening");
+        } else {
+          logger.debug("useRoadStories", "🏁 Fin nominale du cycle de traitement. Remise à zéro de l'écran de détection.");
+          setActiveStatusLocal("listening");
+          setCurrentPOIName(null);
+        }
       } catch (error) {
-        logger.error("useRoadStories", error);
-        if (!didStartSpeaking) setActiveStatus("listening");
+        logger.error("useRoadStories", "💥 Erreur critique lors de l'exécution du tick:", error);
+
+        if (isMutedTransitionRef.current) {
+          isSpeakingRef.current = false;
+          isMutedTransitionRef.current = false;
+          setActiveStatusLocal("listening");
+        } else if (!isSpeakingRef.current) {
+          setActiveStatusLocal("listening");
+          setCurrentPOIName(null);
+        }
       } finally {
         isTickRunning.current = false;
-        if (didStartSpeaking) {
-          isSpeakingRef.current = false;
-          setActiveStatus("listening");
-          setCurrentPOIName(null);
-          if (!isMutedRef.current) {
-            setCurrentMessage(null);
-            setCurrentToolsUsed([]);
-          }
-        }
       }
     };
 
-    // Premier tick immédiat, puis intervalle régulier
     void tick();
-    const intervalId = setInterval(tick, settings.pollIntervalMs);
+    const intervalId = setInterval(tick, settingsRef.current.pollIntervalMs);
 
-    // Nettoyage à la désactivation ou au démontage
+    // Hard-reset complet sur démontage/passage à OFF
     return () => {
+      logger.debug("useRoadStories", "📴 [BOUTON OFF] Demande d'extinction complète et hard-reset de la session.");
       clearInterval(intervalId);
       stop();
+
+      isSpeakingRef.current = false;
+      isTickRunning.current = false;
+      isMutedTransitionRef.current = false;
+
+      setActiveStatusLocal("listening");
       setCurrentMessage(null);
       setCurrentToolsUsed([]);
-      wakeLock?.release().catch(() => {});
-    };
-  }, [addHistoryEntry, hasTriggeredPOI, isActive, markPOITriggered, settings]);
+      setCurrentPOIName(null);
 
-  return { isActive, setIsActive, status, currentPOIName, currentMessage, currentToolsUsed, isMuted, setIsMuted, history, deleteHistoryEntry };
+      if (wakeLock) {
+        wakeLock.release().catch(() => {});
+      }
+    };
+  }, [isActive, coords, addHistoryEntry, hasTriggeredPOI, markPOITriggered]);
+
+  // Log des erreurs de géolocalisation
+  useEffect(() => {
+    if (isActive && geoError) {
+      logger.error("useRoadStories", "Erreur émise par le capteur GPS réactif :", geoError);
+    }
+  }, [geoError, isActive]);
+
+  return {
+    isActive,
+    setIsActive,
+    status,
+    currentPOIName,
+    currentMessage,
+    currentToolsUsed,
+    isMuted,
+    setIsMuted,
+    history,
+    deleteHistoryEntry,
+  };
 }
