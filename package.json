@@ -1,7 +1,7 @@
 {
   "name": "road-stories",
   "private": true,
-  "version": "## [1.0.18.1] - 2026-05-26",
+  "version": "1.0.19",
   "type": "module",
   "scripts": {
     "dev:vercel": "set -a; . ./.env.local; set +a; vercel dev",
