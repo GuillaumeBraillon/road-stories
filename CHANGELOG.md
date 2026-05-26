@@ -5,6 +5,30 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.21] - 2026-05-26
+
+### Refactorisation des thèmes, d'Overpass et du filtrage des POI
+
+Optimisation globale de la pertinence des points d'intérêt capturés pour un trajet routier/autoroutier, centralisation des configurations de timeout et enrichissement du filtrage.
+
+#### 🎡 Thématiques & Interface (`src/App.tsx`)
+
+- **Focus "Détour Validé"** : Nettoyage drastique des sous-thèmes pour purger le micro-patrimoine non visible ou non pertinent en voiture (arbres remarquables, fontaines de village, petites chapelles).
+- **Restructuration** : Recalibrage des filtres OSM sur les infrastructures majeures : châteaux forts, abbayes, grands repères naturels (cols, canyons, falaises) et musées d'envergure.
+- **🚂 Nouveau thème "Histoire & Patrimoine du Rail"** : Ajout d'une catégorie dédiée au patrimoine ferroviaire intégrant les gares historiques, viaducs d'art remarquables, chemins de fer préservés et musées du train.
+- **Infos Touristiques par défaut** : Suppression de l'injection forcée globale de `tourism=information`. Passage par le flux standard sous la forme d'un sous-thème "Bornes & Infos Touristiques" activé par défaut dans l'UI.
+
+#### 📡 Service Overpass (`src/services/overpass.ts`)
+
+- **Formule de Timeout Dynamique** : Suppression du timeout codé en dur dans la chaîne Overpass QL. Calcul automatisé de `OVERPASS_TIMEOUT_SEC` basé sur la constante client `REQUEST_TIMEOUT_MS` avec une marge de sécurité réseau intégrée (fail-safe via `Math.max(2, ...)`).
+- **Robustesse de Requête** : Ajout d'une garde de sécurité avec _early-return_ immédiat (renvoi d'un tableau vide) si aucun filtre ou thème n'est coché, évitant ainsi l'envoi de requêtes d'union `()` invalides (HTTP 400) aux serveurs Overpass.
+- **Refactoring** : Nettoyage et déduplication stricte des filtres via un `Set` natif, et réalignement des paramètres passés à `buildQuery`.
+
+#### 🔍 Filtre de Pertinence (`src/services/poiFilter.ts`)
+
+- **Extension des API distantes** : Enrichissement massif du registre `TOOL_SUPPORTED_CATEGORIES` (intégration de `viewpoint`, `monastery`, `abbey`, `train_station`, `racetrack`, `aquarium`, etc.) pour autoriser l'agent Gemini à invoquer Wikipedia ou Google Places sur ces nouveaux types de nœuds si la data OSM locale est incomplète.
+- **Optimisation de la Précision** : Réorganisation interne des constantes pour un tri plus fin entre le patrimoine d'étape majeur et le bruit de fond administratif ou urbain.
+
 ## [1.0.20] - 2026-05-26
 
 ### Refactor `useRoadStories` et `poiFilter`

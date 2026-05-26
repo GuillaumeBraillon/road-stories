@@ -2,21 +2,22 @@ import type { Coords, POI, Theme } from "../types";
 import { logger } from "./logger";
 
 /**
- * Timeout maximum pour chaque requête Overpass (en millisecondes).
+ * Timeout maximum pour la coupure de la socket réseau client (en millisecondes).
  */
 const REQUEST_TIMEOUT_MS = 10_000;
+
+/**
+ * Calcul dynamique du timeout Overpass Server (en secondes).
+ * Formule : (Timeout Réseau / 1000) - Marge de sécurité réseau (1.5s).
+ * Math.max(2, ...) garantit qu'on ne descendra jamais en dessous de 2 secondes si REQUEST_TIMEOUT_MS est configuré très bas.
+ */
+const OVERPASS_TIMEOUT_SEC = Math.max(2, Math.floor(REQUEST_TIMEOUT_MS / 1000 - 1.5));
 
 /**
  * Noms explicites trop génériques pour être utiles (infrastructure routière OSM sans identité culturelle).
  * Permet d'exclure les POI sans identité culturelle.
  */
 const GENERIC_NAMES = new Set(["tunnel", "route", "chemin", "rue", "avenue", "passage", "carrefour", "échangeur", "bretelle", "virage", "col"]);
-
-/**
- * Filtres OSM toujours actifs, indépendamment des thèmes sélectionnés.
- * Permet de toujours récupérer les points d'information touristique.
- */
-const ALWAYS_ACTIVE_FILTERS = ['"tourism"="information"'];
 
 /**
  * Structure d'un nœud OSM tel que retourné par Overpass.
@@ -48,10 +49,9 @@ interface OverpassResponse {
  * @param osmFilters Tableau de filtres OSM (ex: '"tourism"="information"')
  * @returns Chaîne de requête OverpassQL prête à être envoyée
  */
-function buildQuery(lat: number, lng: number, radiusMeters: number, osmFilters: string[]): string {
-  const around = `(around:${radiusMeters},${lat},${lng})`;
-  const nodes = osmFilters.map((f) => `      node[${f}]${around};`).join("\n");
-  return `[out:json][timeout:8];\n(\n${nodes}\n);\nout;`;
+function buildQuery(lat: number, lng: number, radiusMeters: number, filters: string[]): string {
+  const nodes = filters.map((f) => `      node[${f}](around:${radiusMeters},${lat},${lng});`).join("\n");
+  return `[out:json][timeout:${OVERPASS_TIMEOUT_SEC}];\n(\n${nodes}\n);\nout;`;
 }
 
 /**
@@ -151,13 +151,23 @@ function resolvePoiName(tags: Record<string, string>): string | null {
  * @throws Error si tous les endpoints échouent
  */
 export async function getNearbyPOIs(coords: Coords, themes: Theme[], radiusMeters: number = 500): Promise<POI[]> {
+  // 1. Extraction directe et typée des filtres des sous-thèmes cochés (dont "tourism=information")
   const themeFilters = themes.filter((t) => t.enabled).flatMap((t) => t.osmFilters);
-  const allFilters = [...new Set([...ALWAYS_ACTIVE_FILTERS, ...themeFilters])];
+
+  // 2. Déduplication simple des filtres via un Set
+  const allFilters = [...new Set(themeFilters)];
+
+  // 3. Sécurité : si aucun thème n'est coché, on évite une requête Overpass invalide (vide)
+  if (allFilters.length === 0) {
+    logger.debug("overpass SERVICE", "⏭️ Aucun filtre actif sélectionné. Requête annulée.");
+    return [];
+  }
+
   const query = buildQuery(coords.lat, coords.lng, radiusMeters, allFilters);
 
   logger.debug("overpass SERVICE", "Requête envoyée au proxy Edge:\n" + query);
 
-  // Appel unique et direct à ton proxy serveur (fini la boucle)
+  // Appel unique et direct à ton proxy serveur
   const data = await fetchOverpass("/api/overpass", `data=${encodeURIComponent(query)}`);
 
   const seenNames = new Set<string>();

@@ -19,43 +19,26 @@ import { Download } from "lucide-react";
 const DEFAULT_THEME_GROUPS: ThemeGroup[] = [
   {
     id: "patrimoine",
-    label: "Patrimoine",
+    label: "Grands Monuments & Châteaux",
     icon: "🏰",
     subThemes: [
       {
         id: "chateaux",
-        label: "Châteaux & fortifications",
+        label: "Châteaux & Citadelles",
         enabled: true,
-        osmFilters: ['"historic"="castle"', '"historic"="fort"', '"historic"="city_gate"', '"historic"="tower"'],
+        osmFilters: ['"historic"="castle"', '"historic"="fort"', '"historic"="fortress"', '"historic"="palace"'],
       },
       {
-        id: "monuments",
-        label: "Monuments & mémoriaux",
+        id: "monuments_majeurs",
+        label: "Monuments & Édifices Historiques",
         enabled: true,
-        osmFilters: ['"historic"="monument"', '"historic"="boundary_stone"', '"historic"="milestone"'],
+        osmFilters: ['"historic"="monument"', '"historic"="memorial"', '"historic"="aqueduct"', '"man_made"="viaduct"'],
       },
       {
         id: "archeologie",
-        label: "Sites archéologiques & ruines",
+        label: "Sites archéologiques d'envergure",
         enabled: true,
-        osmFilters: ['"historic"="archaeological_site"', '"historic"="ruins"', '"historic"="roman_road"'],
-      },
-      {
-        id: "patrimoine_industriel",
-        label: "Patrimoine industriel",
-        enabled: false,
-        osmFilters: ['"historic"="industrial"', '"historic"="mine"', '"man_made"="windmill"', '"historic"="aqueduct"'],
-      },
-      {
-        id: "geologie",
-        label: "Curiosités géologiques",
-        enabled: false,
-        osmFilters: [
-          '"geological"="volcanic_caldera_rim"',
-          '"geological"="palaeontological_site"',
-          '"geological"="meteor_crater"',
-          '"geological"="glacial_erratic"',
-        ],
+        osmFilters: ['"historic"="archaeological_site"', '"historic"="ruins"'],
       },
     ],
   },
@@ -64,27 +47,46 @@ const DEFAULT_THEME_GROUPS: ThemeGroup[] = [
     label: "Culture & Arts",
     icon: "🎨",
     subThemes: [
-      { id: "musees", label: "Musées", enabled: true, osmFilters: ['"tourism"="museum"'] },
-      { id: "art", label: "Art & sculptures", enabled: false, osmFilters: ['"tourism"="artwork"', '"amenity"="arts_centre"', '"tourism"="gallery"'] },
-      { id: "spectacles", label: "Théâtres & opéras", enabled: false, osmFilters: ['"amenity"="theatre"', '"amenity"="opera"'] },
-      { id: "sciences", label: "Sciences & planétariums", enabled: false, osmFilters: ['"amenity"="planetarium"', '"tourism"="aquarium"'] },
+      {
+        id: "musees",
+        label: "Musées & Muséums",
+        enabled: true,
+        osmFilters: ['"tourism"="museum"'],
+      },
+      {
+        id: "arts_centres",
+        label: "Centres d'Art & Grandes Galeries",
+        enabled: false,
+        osmFilters: ['"amenity"="arts_centre"', '"tourism"="gallery"'],
+      },
+      {
+        id: "spectacles_historiques",
+        label: "Opéras, Théâtres & Scènes Nationales",
+        enabled: false,
+        osmFilters: ['"amenity"="theatre"', '"amenity"="opera"'],
+      },
+      {
+        id: "sciences_culture",
+        label: "Planétariums & Centres Scientifiques",
+        enabled: false,
+        osmFilters: ['"amenity"="planetarium"', '"tourism"="aquarium"'],
+      },
     ],
   },
   {
     id: "nature",
-    label: "Nature & Paysages",
+    label: "Grands Paysages",
     icon: "🌿",
     subThemes: [
-      { id: "sommets", label: "Sommets & reliefs", enabled: true, osmFilters: ['"natural"="peak"', '"natural"="ridge"', '"natural"="cliff"'] },
-      { id: "eau", label: "Chutes d'eau & lacs", enabled: true, osmFilters: ['"natural"="waterfall"', '"water"="lake"', '"water"="reservoir"'] },
-      { id: "grottes", label: "Grottes & cavernes", enabled: true, osmFilters: ['"natural"="cave_entrance"'] },
+      { id: "panoramas", label: "Points de vue & Belvédères", enabled: true, osmFilters: ['"tourism"="viewpoint"'] },
+      { id: "reliefs", label: "Cols, Falaises & Canyons", enabled: true, osmFilters: ['"mountain_pass"="yes"', '"natural"="cliff"', '"natural"="gorge"'] },
+      { id: "eau", label: "Lacs & Grands Fleuves", enabled: true, osmFilters: ['"water"="lake"', '"water"="reservoir"'] },
       {
         id: "parcs_naturels",
-        label: "Parcs naturels & réserves",
+        label: "Parcs naturels & Réserves",
         enabled: true,
-        osmFilters: ['"boundary"="national_park"', '"leisure"="nature_reserve"', '"boundary"="protected_area"'],
+        osmFilters: ['"boundary"="national_park"', '"leisure"="nature_reserve"'],
       },
-      { id: "forets", label: "Forêts remarquables", enabled: false, osmFilters: ['"natural"="wood"', '"landuse"="forest"'] },
     ],
   },
   {
@@ -92,21 +94,73 @@ const DEFAULT_THEME_GROUPS: ThemeGroup[] = [
     label: "Tourisme & Loisirs",
     icon: "🎡",
     subThemes: [
-      { id: "attractions", label: "Attractions & parcs", enabled: true, osmFilters: ['"tourism"="theme_park"', '"tourism"="zoo"', '"tourism"="attraction"'] },
+      {
+        id: "attractions",
+        label: "Parcs & Grandes attractions",
+        enabled: true,
+        osmFilters: ['"tourism"="theme_park"', '"tourism"="zoo"', '"leisure"="water_park"'],
+      },
+      {
+        id: "infos_touristiques",
+        label: "Bornes & Infos Touristiques",
+        enabled: true,
+        osmFilters: ['"tourism"="information"'],
+      },
+      {
+        id: "complexes_sportifs",
+        label: "Circuits & Complexes mécaniques",
+        enabled: false,
+        osmFilters: ['"leisure"="racetrack"'],
+      },
+      {
+        id: "aquariums",
+        label: "Aquariums & Centres marins",
+        enabled: false,
+        osmFilters: ['"tourism"="aquarium"'],
+      },
     ],
   },
   {
     id: "religion",
-    label: "Lieux de culte",
+    label: "Édifices Religieux Majeurs",
     icon: "⛪",
     subThemes: [
+      { id: "abbayes", label: "Abbayes & Monastères", enabled: true, osmFilters: ['"historic"="monastery"', '"historic"="abbey"'] },
       {
-        id: "eglises",
-        label: "Églises & cathédrales",
+        id: "cathedrales",
+        label: "Cathédrales & Grandes Églises",
         enabled: false,
-        osmFilters: ['"amenity"="place_of_worship"', '"building"="cathedral"', '"building"="church"'],
+        osmFilters: ['"building"="cathedral"', '"building"="church"'], // Souvent visibles de loin
       },
-      { id: "abbayes", label: "Abbayes & monastères", enabled: false, osmFilters: ['"historic"="monastery"', '"historic"="abbey"'] },
+    ],
+  },
+  {
+    id: "ferroviaire",
+    label: "Histoire & Patrimoine férroviaire",
+    icon: "🚂",
+    subThemes: [
+      {
+        id: "gares_historiques",
+        label: "Gares Célèbres & Architecture",
+        enabled: true,
+        osmFilters: ['"building"="train_station"', '"historic"="station"'],
+      },
+      {
+        id: "ouvrages_art_rail",
+        label: "Viaducs & Ouvrages d'art étonnants",
+        enabled: true,
+        osmFilters: [
+          '"man_made"="viaduct"',
+          '"bridge"="viaduct"',
+          // Note: capturera aussi le routier, mais Gemini fera le focus rail si présent dans les tags
+        ],
+      },
+      {
+        id: "musees_train",
+        label: "Musées du Train & Lignes Touristiques",
+        enabled: true,
+        osmFilters: ['"railway"="museum"', '"railway"="preserved"'],
+      },
     ],
   },
 ];

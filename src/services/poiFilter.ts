@@ -9,6 +9,41 @@ import { logger } from "./logger";
 
 const BLACKLISTED_INFORMATION_TYPES = new Set(["rules", "map", "guidepost", "office"]);
 
+// --- Tags enrichissants ---
+
+/**
+ * Tags OSM qui apportent du contenu réel au-delà de la simple classification.
+ * Un POI avec au moins un de ces tags a du contexte exploitable.
+ */
+const ENRICHING_TAGS = ["description", "inscription", "heritage", "castle_type", "site_type", "denomination", "religion", "ele", "height", "wikidata"];
+
+// --- Éligibilité aux outils Gemini ---
+
+/**
+ * Catégories pour lesquelles Gemini peut appeler Wikipedia ou Google Places.
+ * Ces POIs sont retenus même sans tags enrichissants OSM.
+ */
+const TOOL_SUPPORTED_CATEGORIES = new Set([
+  "museum",
+  "castle",
+  "monument",
+  "theme_park",
+  "viewpoint",
+  "monastery",
+  "abbey",
+  "fortress",
+  "aqueduct",
+  "viaduct",
+  "zoo",
+  "water_park",
+  "racetrack",
+  "aquarium",
+  // Ajouts thématique Ferroviaire :
+  "train_station",
+  "station",
+  "museum", // Déjà inclus, mais gère railway=museum nativement si mappé
+]);
+
 /**
  * Retourne true si le POI est un panneau administratif sans valeur culturelle
  * (règlement de parc, plan de bus, bureau d'information, etc.)
@@ -29,28 +64,12 @@ export function isAdministrativePOI(tags: Record<string, string>): boolean {
   );
 }
 
-// --- Tags enrichissants ---
-
-/**
- * Tags OSM qui apportent du contenu réel au-delà de la simple classification.
- * Un POI avec au moins un de ces tags a du contexte exploitable.
- */
-const ENRICHING_TAGS = ["description", "inscription", "heritage", "castle_type", "site_type", "denomination", "religion", "ele", "height", "wikidata"];
-
 /**
  * Retourne true si le POI possède au moins un tag enrichissant.
  */
 export function hasEnoughContext(tags: Record<string, string>): boolean {
   return ENRICHING_TAGS.some((key) => tags[key]);
 }
-
-// --- Éligibilité aux outils Gemini ---
-
-/**
- * Catégories pour lesquelles Gemini peut appeler Wikipedia ou Google Places.
- * Ces POIs sont retenus même sans tags enrichissants OSM.
- */
-const TOOL_SUPPORTED_CATEGORIES = new Set(["museum", "theatre", "artwork", "castle", "monument", "attraction", "arts_centre", "theme_park"]);
 
 /**
  * Retourne true si le POI appartient à une catégorie
