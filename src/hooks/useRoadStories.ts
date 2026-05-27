@@ -75,6 +75,9 @@ export function useRoadStories(
   const isMutedRef = useRef<boolean>(false);
   const isMutedTransitionRef = useRef<boolean>(false);
   const lastTriggeredCoordsRef = useRef<Coords | null>(null);
+  const lastPoiRef = useRef<{ id: string; time: number } | null>(null);
+  const lastTickTimeRef = useRef<number>(0);
+  const coordsRef = useRef<Coords | null>(null);
 
   // --- Sauvegarde des configurations pour immuniser le useEffect principal contre les re-renders ---
   const settingsRef = useRef<AppSettings>(settings);
@@ -87,6 +90,10 @@ export function useRoadStories(
   useEffect(() => {
     themesRef.current = themes;
   }, [themes]);
+
+  useEffect(() => {
+    coordsRef.current = coords;
+  }, [coords]);
 
   // --- Synchronisation du bouton MUTE avec action immédiate sur le récit en cours ---
   useEffect(() => {
@@ -139,14 +146,25 @@ export function useRoadStories(
      */
     const tick = async () => {
       logger.debug("useRoadStories", `[TICK START] Vérification d'état - isTickRunning: ${isTickRunning.current}, isSpeaking: ${isSpeakingRef.current}`);
+      const requestId = crypto.randomUUID();
+      logger.debug("useRoadStories", `[${requestId}] TICK START`);
 
       if (isTickRunning.current || isSpeakingRef.current) {
         logger.debug("useRoadStories", "[TICK END] Un traitement réseau ou audio est déjà en cours d'exécution.");
         return;
       }
 
-      if (!coords) {
+      const currentCoords = coordsRef.current;
+
+      if (!currentCoords) {
         logger.debug("useRoadStories", "[TICK END] En attente de coordonnées GPS valides de la part du capteur.");
+        isTickRunning.current = false;
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastTickTimeRef.current < 2000) {
+        logger.debug("useRoadStories", `[TICK END] Debounce actif (2s) - tick ignoré`);
         return;
       }
 
@@ -162,7 +180,7 @@ export function useRoadStories(
         logger.debug("useRoadStories", `[CONFIGURATION] Seuil de déplacement requis : ${minDistanceBetweenStories}m | Rayon de recherche : ${searchRadius}m`);
 
         if (lastTriggeredCoordsRef.current) {
-          const distanceSinceLastStory = calculateDistance(coords, lastTriggeredCoordsRef.current);
+          const distanceSinceLastStory = calculateDistance(currentCoords, lastTriggeredCoordsRef.current);
           logger.debug(
             "useRoadStories",
             `[CONFIGURATION] Distance depuis le dernier POI : ${distanceSinceLastStory.toFixed(1)}m (Seuil requis : ${minDistanceBetweenStories}m)`
@@ -170,14 +188,15 @@ export function useRoadStories(
 
           if (distanceSinceLastStory < minDistanceBetweenStories) {
             logger.debug("useRoadStories", "[TICK END] Rayon de déplacement insuffisant par rapport au seuil.");
+            isTickRunning.current = false;
             return;
           }
         }
 
         setActiveStatusLocal("searching");
 
-        logger.debug("useRoadStories", `[CALL OVERPASS] lat: ${coords.lat}, lng: ${coords.lng} (Rayon: ${searchRadius}m)`);
-        const pois = await getNearbyPOIs(coords, currentThemes, searchRadius);
+        logger.debug("useRoadStories", `[CALL OVERPASS] lat: ${currentCoords.lat}, lng: ${currentCoords.lng} (Rayon: ${searchRadius}m)`);
+        const pois = await getNearbyPOIs(currentCoords, currentThemes, searchRadius);
 
         logger.debug(
           "useRoadStories",
@@ -188,6 +207,7 @@ export function useRoadStories(
         if (pois.length === 0) {
           logger.debug("useRoadStories", "😴 Aucun point d'intérêt trouvé dans le périmètre actuel.");
           setActiveStatusLocal("listening");
+          isTickRunning.current = false;
           return;
         }
 
@@ -209,6 +229,7 @@ export function useRoadStories(
         if (eligiblePOIs.length === 0) {
           logger.debug("useRoadStories", "⏭️ Fin du tick : Aucun POI de la zone n'est valide ou disponible.");
           setActiveStatusLocal("listening");
+          isTickRunning.current = false;
           return;
         }
 
@@ -216,12 +237,25 @@ export function useRoadStories(
         const candidatePOIs = eligiblePOIs
           .map((poi) => ({
             poi,
-            distance: calculateDistance(coords, { lat: poi.lat, lng: poi.lng }),
+            distance: calculateDistance(currentCoords, { lat: poi.lat, lng: poi.lng }),
           }))
           .sort((a, b) => a.distance - b.distance);
 
         const target = candidatePOIs[0];
         const newPOI = target.poi;
+
+        const now = Date.now();
+
+        if (lastPoiRef.current?.id === newPOI.id && now - lastPoiRef.current.time < 15000) {
+          logger.debug("useRoadStories", "⏭️ POI déjà traité récemment (fenêtre anti-doublon 15s), skip tick.");
+          isTickRunning.current = false;
+          return;
+        }
+
+        lastPoiRef.current = {
+          id: newPOI.id,
+          time: now,
+        };
 
         logger.debug("useRoadStories", `🎯 POI Cible sélectionné : "${newPOI.name}" (${target.distance.toFixed(1)}m).`);
         setCurrentThemeLabel(newPOI.themeLabel);
@@ -246,10 +280,12 @@ export function useRoadStories(
           themeLabel: newPOI.themeLabel,
         });
 
-        lastTriggeredCoordsRef.current = coords;
+        lastTriggeredCoordsRef.current = currentCoords;
         setCurrentMessage(message);
         setCurrentPOIName(cleanTitle);
         setCurrentToolsUsed(toolsUsed);
+        lastTickTimeRef.current = Date.now();
+        logger.debug("useRoadStories", `[${requestId}] Tick completed successfully`);
 
         // Sortie audio
         if (!isMutedRef.current) {
@@ -308,7 +344,7 @@ export function useRoadStories(
         wakeLock.release().catch(() => {});
       }
     };
-  }, [isActive, coords, addHistoryEntry, hasTriggeredPOI, markPOITriggered]);
+  }, [isActive, addHistoryEntry, hasTriggeredPOI, markPOITriggered]);
 
   // Log des erreurs de géolocalisation
   useEffect(() => {

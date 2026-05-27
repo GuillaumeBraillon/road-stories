@@ -5,6 +5,24 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.24] - 2026-05-27
+
+### Added
+
+- `api/gemini.ts` : ajout d'un fallback `parsed.message` lors de la construction de la réponse finale, permettant de retourner correctement les messages issus de ce champ en cas de parsing alternatif.
+
+### Changed
+
+- `src/hooks/useRoadStories.ts` : refactor majeur du tick POI pour améliorer la robustesse et réduire les doublons :
+  - introduction de refs (`coordsRef`, `lastPoiIdRef`, `lastTickTimeRef`)
+  - debounce des ticks (2s)
+  - suppression des triggers inutiles liés à `coords` dans les dépendances React
+  - utilisation systématique de `currentCoords` pour éviter les lectures stale
+  - ajout d'une fenêtre de déduplication POI (15s)
+  - ajout d'un `requestId` pour tracer chaque tick dans les logs
+  - sécurisation des early returns avec reset de `isTickRunning`
+  - réduction des conditions de race entre appels Overpass / Gemini
+
 ## [1.0.23] - 2026-05-27
 
 ### Ajouté

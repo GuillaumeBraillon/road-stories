@@ -317,7 +317,7 @@ export default async function handler(request: Request): Promise<Response> {
 
       return new Response(
         JSON.stringify({
-          message: parsed.text ?? parsed.content ?? "",
+          message: parsed.text ?? parsed.content ?? parsed.message ?? "",
           refinedTitle: parsed.refinedTitle ?? undefined,
           toolsUsed,
         }),
