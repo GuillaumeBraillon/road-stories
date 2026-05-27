@@ -15,6 +15,7 @@ import type { PoiHistoryEntry } from "../types";
 import { BottomSheet } from "./BottomSheet";
 import { ToolBadges } from "./ToolBadges";
 import { speak, stop } from "../services/tts";
+import { TppmThemes } from "./TppmThemes";
 
 interface HistoryPanelProps {
   isOpen: boolean;
@@ -57,7 +58,10 @@ export function HistoryPanel({ isOpen, onClose, history, onDelete }: HistoryPane
               </div>
               <p className="text-white text-sm leading-relaxed">{entry.message}</p>
               <div className="flex items-center justify-between">
-                <ToolBadges tools={entry.toolsUsed} />
+                <div className="flex items-center gap-2">
+                  <ToolBadges tools={entry.toolsUsed} />
+                  <TppmThemes label={entry.themeLabel} />
+                </div>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => {

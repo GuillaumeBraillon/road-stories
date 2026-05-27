@@ -10,6 +10,7 @@ import { HistoryPanel } from "./components/HistoryPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { usePWAInstall } from "./hooks/usePWAInstall";
 import { Download } from "lucide-react";
+import { TppmThemes } from "./components/TppmThemes";
 
 /**
  * Liste par défaut des groupes de thèmes et sous-thèmes proposés à l'utilisateur.
@@ -229,10 +230,19 @@ function App() {
    * - Génération de message IA (Gemini), synthèse vocale, gestion du mute
    * - Historique des POI déclenchés
    */
-  const { isActive, setIsActive, status, currentPOIName, currentMessage, currentToolsUsed, isMuted, setIsMuted, history, deleteHistoryEntry } = useRoadStories(
-    flattenThemes(themeGroups),
-    settings
-  );
+  const {
+    isActive,
+    setIsActive,
+    status,
+    currentPOIName,
+    currentMessage,
+    currentToolsUsed,
+    currentThemeLabel,
+    isMuted,
+    setIsMuted,
+    history,
+    deleteHistoryEntry,
+  } = useRoadStories(flattenThemes(themeGroups), settings);
 
   /**
    * État persistant pour verrouiller le titre du POI à l'écran.
@@ -325,8 +335,11 @@ function App() {
           {/* Utilisation du nom tamponné pour persister le titre à l'écran */}
           {displayedPOIName && <p className="text-gray-400 text-xs font-medium uppercase tracking-wide">{displayedPOIName}</p>}
           <p className="text-white text-sm leading-relaxed">{currentMessage}</p>
-          <div className="self-end mt-1">
+          <div className="self-start mt-1">
+            {/* Affichage dynamique des outils utilisés pour générer ce message (ex: Wikipedia, Google Places) */}
             <ToolBadges tools={currentToolsUsed} />
+            {/* 🎯 Affichage du composant TppmThemes */}
+            <TppmThemes label={currentThemeLabel} />
           </div>
         </div>
       )}

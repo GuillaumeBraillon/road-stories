@@ -19,5 +19,12 @@ export async function generateRoadMessage(params: GenerateMessageParams): Promis
   }
 
   logger.debug("gemini SERVICE", "Réponse reçue de l'API Gemini, parsing du résultat...");
-  return (await response.json()) as GeminiResult;
+  const rawData = await response.json();
+
+  // 🎯 Sécurité de mapping entre le schéma de l'API (prompts.ts) et tes types UI (gemini.types.ts)
+  return {
+    message: rawData.message || "",
+    refinedTitle: rawData.refinedTitle || rawData.title || undefined,
+    toolsUsed: rawData.actualToolsUsed || rawData.toolsUsed || [],
+  };
 }

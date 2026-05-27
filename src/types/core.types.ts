@@ -6,6 +6,8 @@ export type POI = {
   lat: number;
   lng: number;
   tags: Record<string, string>;
+  themeLabel?: string; // 🎯 Pour lier le POI à son filtre d'origine
+  themeIcon?: string;
 };
 
 export type Theme = {
@@ -42,4 +44,6 @@ export type PoiHistoryEntry = {
   message: string;
   toolsUsed: string[];
   timestamp: Date;
+  themeLabel?: string; // 🎯 Ajout de la string du thème (ex: "Châteaux & Citadelles")
+  themeIcon?: string; // 🎯 Optionnel : pour afficher l'émoji du groupe (ex: "🏰")
 };

@@ -43,6 +43,8 @@ export function useRoadStories(
   currentMessage: string | null;
   /** Liste des outils (Wikipedia, Google Places) invoqués par l'agent */
   currentToolsUsed: string[];
+  /** Etat du theme */
+  currentThemeLabel: string | undefined;
   /** État du mode silencieux */
   isMuted: boolean;
   /** Callback pour basculer le mode silencieux */
@@ -59,6 +61,7 @@ export function useRoadStories(
   const [currentMessage, setCurrentMessage] = useState<string | null>(null);
   const [currentToolsUsed, setCurrentToolsUsed] = useState<string[]>([]);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [currentThemeLabel, setCurrentThemeLabel] = useState<string | undefined>(undefined);
 
   // --- Gestion de l'Historique ---
   const { history, addHistoryEntry, deleteHistoryEntry, hasTriggeredPOI, markPOITriggered } = usePoiHistory();
@@ -138,12 +141,12 @@ export function useRoadStories(
       logger.debug("useRoadStories", `[TICK START] Vérification d'état - isTickRunning: ${isTickRunning.current}, isSpeaking: ${isSpeakingRef.current}`);
 
       if (isTickRunning.current || isSpeakingRef.current) {
-        logger.debug("useRoadStories", "🛑 Arrêt du tick : Un traitement réseau ou audio est déjà en cours d'exécution.");
+        logger.debug("useRoadStories", "[TICK END] Un traitement réseau ou audio est déjà en cours d'exécution.");
         return;
       }
 
       if (!coords) {
-        logger.debug("useRoadStories", "⏳ Arrêt du tick : En attente de coordonnées GPS valides de la part du capteur.");
+        logger.debug("useRoadStories", "[TICK END] En attente de coordonnées GPS valides de la part du capteur.");
         return;
       }
 
@@ -156,32 +159,29 @@ export function useRoadStories(
         const minDistanceBetweenStories = currentSettings.overpassMoveThresholdM;
         const searchRadius = currentSettings.detectionRadiusM;
 
-        logger.debug(
-          "useRoadStories",
-          `⚙️ Configuration chargée - Seuil de déplacement requis : ${minDistanceBetweenStories}m | Rayon de recherche : ${searchRadius}m`
-        );
+        logger.debug("useRoadStories", `[CONFIGURATION] Seuil de déplacement requis : ${minDistanceBetweenStories}m | Rayon de recherche : ${searchRadius}m`);
 
         if (lastTriggeredCoordsRef.current) {
           const distanceSinceLastStory = calculateDistance(coords, lastTriggeredCoordsRef.current);
           logger.debug(
             "useRoadStories",
-            `Distance calculée depuis le dernier POI historique : ${distanceSinceLastStory.toFixed(1)}m (Seuil requis : ${minDistanceBetweenStories}m)`
+            `[CONFIGURATION] Distance depuis le dernier POI : ${distanceSinceLastStory.toFixed(1)}m (Seuil requis : ${minDistanceBetweenStories}m)`
           );
 
           if (distanceSinceLastStory < minDistanceBetweenStories) {
-            logger.debug("useRoadStories", "⏭️ Rayon de déplacement insuffisant par rapport au seuil utilisateur. Fin du tick.");
+            logger.debug("useRoadStories", "[TICK END] Rayon de déplacement insuffisant par rapport au seuil.");
             return;
           }
         }
 
         setActiveStatusLocal("searching");
 
-        logger.debug("useRoadStories", `Appel Overpass aux coordonnées lat: ${coords.lat}, lng: ${coords.lng} (Rayon: ${searchRadius}m)`);
+        logger.debug("useRoadStories", `[CALL OVERPASS] lat: ${coords.lat}, lng: ${coords.lng} (Rayon: ${searchRadius}m)`);
         const pois = await getNearbyPOIs(coords, currentThemes, searchRadius);
 
         logger.debug(
           "useRoadStories",
-          `${pois.length} POI(s) brut(s) extrait(s) :`,
+          `${pois.length} POI(s) :`,
           pois.map((p) => p.name)
         );
 
@@ -193,19 +193,18 @@ export function useRoadStories(
 
         // --- Filtrage centralisé et traçabilité claire ---
         const eligiblePOIs: POI[] = [];
-
+        logger.debug("useRoadStories", "Début du processus de filtrage des POI extraits...");
         for (const poi of pois) {
           if (hasTriggeredPOI(poi.id)) {
-            logger.debug("useRoadStories", `❌ POI Ignoré [Déjà entendu au cours de la session] ➡️ "${poi.name}" (ID: ${poi.id})`);
+            logger.debug("useRoadStories", `❌ [Déjà entendu au cours de la session] ➡️ "${poi.name}"`);
             continue;
           }
-          if (shouldSkipPOI(poi.tags, poi.name)) {
-            continue; // Le log explicite du rejet est délégué à shouldSkipPOI
-          }
+          if (shouldSkipPOI(poi.tags, poi.name)) continue;
+
           eligiblePOIs.push(poi);
         }
 
-        logger.debug("useRoadStories", `📊 Bilan zone : ${eligiblePOIs.length} POI(s) éligible(s) sur ${pois.length} brut(s).`);
+        logger.debug("useRoadStories", `${eligiblePOIs.length} POI(s) éligible(s) sur ${pois.length}.`);
 
         if (eligiblePOIs.length === 0) {
           logger.debug("useRoadStories", "⏭️ Fin du tick : Aucun POI de la zone n'est valide ou disponible.");
@@ -225,27 +224,31 @@ export function useRoadStories(
         const newPOI = target.poi;
 
         logger.debug("useRoadStories", `🎯 POI Cible sélectionné : "${newPOI.name}" (${target.distance.toFixed(1)}m).`);
-        setCurrentPOIName(newPOI.name);
+        setCurrentThemeLabel(newPOI.themeLabel);
 
         // Appel Génération IA
-        const { message, toolsUsed } = await generateRoadMessage({
+        const { message, refinedTitle, toolsUsed } = await generateRoadMessage({
           poiName: newPOI.name,
           coords: { lat: newPOI.lat, lng: newPOI.lng },
           poiTags: newPOI.tags,
         });
 
+        const cleanTitle = refinedTitle && refinedTitle.trim() ? refinedTitle.trim() : newPOI.name;
+
         // Mutation historique et refs
         markPOITriggered(newPOI.id);
         addHistoryEntry({
           poiId: newPOI.id,
-          poiName: newPOI.name,
+          poiName: cleanTitle,
           message,
           toolsUsed,
           timestamp: new Date(),
+          themeLabel: newPOI.themeLabel,
         });
 
         lastTriggeredCoordsRef.current = coords;
         setCurrentMessage(message);
+        setCurrentPOIName(cleanTitle);
         setCurrentToolsUsed(toolsUsed);
 
         // Sortie audio
@@ -265,7 +268,6 @@ export function useRoadStories(
         } else {
           logger.debug("useRoadStories", "🏁 Fin nominale du cycle de traitement. Remise à zéro de l'écran de détection.");
           setActiveStatusLocal("listening");
-          setCurrentPOIName(null);
         }
       } catch (error) {
         logger.error("useRoadStories", "💥 Erreur critique lors de l'exécution du tick:", error);
@@ -300,6 +302,7 @@ export function useRoadStories(
       setCurrentMessage(null);
       setCurrentToolsUsed([]);
       setCurrentPOIName(null);
+      setCurrentThemeLabel(undefined);
 
       if (wakeLock) {
         wakeLock.release().catch(() => {});
@@ -321,6 +324,7 @@ export function useRoadStories(
     currentPOIName,
     currentMessage,
     currentToolsUsed,
+    currentThemeLabel,
     isMuted,
     setIsMuted,
     history,

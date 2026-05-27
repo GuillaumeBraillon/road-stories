@@ -92,7 +92,7 @@ export function isEligibleForTools(tags: Record<string, string>): boolean {
 export function shouldSkipPOI(tags: Record<string, string>, poiName: string = "POI Inconnu"): boolean {
   // 1. Filtrage des éléments administratifs ou restrictifs
   if (isAdministrativePOI(tags)) {
-    logger.debug("poiFilter", `❌ Rejeté [isAdministrativePOI] -> "${poiName}"`);
+    logger.debug("poiFilter", `❌ [isAdministrativePOI] ➡️ "${poiName}"`);
     return true;
   }
 
@@ -104,13 +104,9 @@ export function shouldSkipPOI(tags: Record<string, string>, poiName: string = "P
 
   // Si le POI n'a pas de contexte OSM ET n'est pas éligible aux outils externes, on le skip
   if (!hasContext && !isEligibleTools) {
-    logger.debug(
-      "poiFilter",
-      `❌ Rejeté [Manque de contexte & Inéligible outils] -> "${poiName}" (tourism: "${tags.tourism ?? "aucun"}", amenity: "${tags.amenity ?? "aucun"}", historic: "${tags.historic ?? "aucun"}")`
-    );
+    logger.debug("poiFilter", `❌ [hasEnoughContext & isEligibleForTools] ➡️ "${poiName}"`);
     return true;
   }
 
-  logger.debug("poiFilter", `✅ Validé pour traitement -> "${poiName}" (HasContext: ${hasContext}, IsEligibleTools: ${isEligibleTools})`);
   return false;
 }

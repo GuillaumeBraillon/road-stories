@@ -1,5 +1,6 @@
 export interface GeminiResult {
   message: string;
+  refinedTitle?: string;
   toolsUsed: string[];
 }
 

@@ -5,6 +5,28 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.22] - 2026-05-27
+
+### Ajouté
+
+- **Génération de titre par l'IA** : Support de `refinedTitle` renvoyé par Gemini pour synthétiser et nettoyer les inscriptions brutes des plaques commémoratives (ex: extraction automatique du sujet historique principal).
+- **Metadata des Thèmes** : Rapprochement dynamique dans le service Overpass pour attacher le `themeLabel` d'origine aux POIs détectés selon les filtres actifs.
+- **Composant UI `TppmThemes`** : Nouveau badge de thème réutilisable avec gestion du dimensionnement (`inline-flex`, `w-max`) pour éviter l'étirement à 100%.
+- **Contextualisation de l'UI** : Affichage des badges de thèmes côte à côte avec les `ToolBadges` sur l'écran principal et au sein des cartes du `HistoryPanel`.
+
+### Modifié
+
+- **Architecture & API** : Durcissement du schéma de validation `RESPONSE_JSON_SCHEMA` côté serveur et mise à jour des route handlers de l'API Edge pour propager `refinedTitle`.
+- **Hook `useRoadStories`** : Refactoring du cycle de vie et de la machine à états pour stabiliser l'affichage du titre nettoyé et empêcher sa réinitialisation prématurée à `null` en fin de voix.
+- **Types TypeScript** : Enrichissement des interfaces `POI` et `PoiHistoryEntry` pour accueillir le `themeLabel` et le `themeIcon`.
+- **Design `ToolBadges`** : Ajustements cosmétiques légers (paddings, polices et bordures) pour harmoniser parfaitement le style visuel avec les badges de thèmes.
+
+### Corrigé
+
+- **Bruit textuel dans l'UI** : Suppression définitive des titres bruts d'OpenStreetMap de plusieurs lignes pollués par des sauts de page (`\n`) ou des dates d'inauguration au profit du titre de l'IA.
+- **Fuites de données API** : Correction des filtres de sortie côté serveur (cas nominaux et post-exécution d'outils) qui jetaient la propriété `refinedTitle`.
+- **Télémétrie** : Nettoyage global des messages de logs (`logger.debug`) pour un suivi plus précis des flux asynchrones et des activations d'outils externes.
+
 ## [1.0.21] - 2026-05-26
 
 ### Refactorisation des thèmes, d'Overpass et du filtrage des POI

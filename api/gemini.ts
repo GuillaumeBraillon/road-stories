@@ -270,6 +270,7 @@ export default async function handler(request: Request): Promise<Response> {
         return new Response(
           JSON.stringify({
             message: parsed.message ?? "",
+            refinedTitle: parsed.refinedTitle ?? undefined,
             toolsUsed: [...new Set([...toolsUsed, ...actualToolsUsed])],
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
@@ -282,7 +283,20 @@ export default async function handler(request: Request): Promise<Response> {
 
     // 5. Cas nominal : pas de tool call, retour direct
     logger.debug("gemini API", "Aucun appel d'outil effectué par Gemini, retour du message généré directement.");
-    return new Response(JSON.stringify({ message: extractText(data), toolsUsed }), { status: 200, headers: { "Content-Type": "application/json" } });
+    try {
+      const parsed = JSON.parse(extractText(data) ?? "{}");
+      return new Response(
+        JSON.stringify({
+          message: parsed.message ?? "",
+          refinedTitle: parsed.refinedTitle ?? undefined,
+          toolsUsed: toolsUsed,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    } catch {
+      // Fallback si le texte n'était exceptionnellement pas du JSON
+      return new Response(JSON.stringify({ message: extractText(data), toolsUsed }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return new Response(JSON.stringify({ error: `Gemini failed: ${message}` }), { status: 502, headers: { "Content-Type": "application/json" } });

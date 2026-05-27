@@ -151,25 +151,16 @@ function resolvePoiName(tags: Record<string, string>): string | null {
  * @throws Error si tous les endpoints échouent
  */
 export async function getNearbyPOIs(coords: Coords, themes: Theme[], radiusMeters: number = 500): Promise<POI[]> {
-  // 1. Extraction directe et typée des filtres des sous-thèmes cochés (dont "tourism=information")
-  const themeFilters = themes.filter((t) => t.enabled).flatMap((t) => t.osmFilters);
+  const activeThemes = themes.filter((t) => t.enabled);
 
-  // 2. Déduplication simple des filtres via un Set
+  // Génération des filtres
+  const themeFilters = activeThemes.flatMap((t) => t.osmFilters);
   const allFilters = [...new Set(themeFilters)];
 
-  // 3. Sécurité : si aucun thème n'est coché, on évite une requête Overpass invalide (vide)
-  if (allFilters.length === 0) {
-    logger.debug("overpass SERVICE", "⏭️ Aucun filtre actif sélectionné. Requête annulée.");
-    return [];
-  }
+  if (allFilters.length === 0) return [];
 
   const query = buildQuery(coords.lat, coords.lng, radiusMeters, allFilters);
-
-  logger.debug("overpass SERVICE", "Requête envoyée au proxy Edge:\n" + query);
-
-  // Appel unique et direct à ton proxy serveur
   const data = await fetchOverpass("/api/overpass", `data=${encodeURIComponent(query)}`);
-
   const seenNames = new Set<string>();
 
   return data.elements
@@ -181,5 +172,23 @@ export async function getNearbyPOIs(coords: Coords, themes: Theme[], radiusMeter
       seenNames.add(name);
       return true;
     })
-    .map(nodeToPoI);
+    .map((node) => {
+      const poi = nodeToPoI(node);
+
+      // 🎯 Association dynamique du thème d'origine du POI
+      // On cherche quel sous-thème actif possède un filtre correspondant aux tags du nœud
+      const matchingTheme = activeThemes.find((t) =>
+        t.osmFilters.some((filter) => {
+          // Extrait la clé et la valeur du filtre (ex: '"historic"="castle"' -> historic, castle)
+          const match = filter.match(/"([^"]+)"="([^"]+)"/);
+          if (!match) return false;
+          const [, key, val] = match;
+          return node.tags?.[key] === val;
+        })
+      );
+
+      if (matchingTheme) poi.themeLabel = matchingTheme.label;
+
+      return poi;
+    });
 }

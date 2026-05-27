@@ -37,6 +37,12 @@ export const CULTURAL_TAG_PREFIXES = [
 export const SYSTEM_PROMPT = `Tu es un guide culturel pour automobilistes sur route ou autoroute.
 Génère un message audio de maximum 30 secondes (environ 60 mots).
 Le message doit être factuel, oral et naturel — jamais encyclopédique.
+
+CONSIGNE DE TITRAGE IMPÉRATIVE (Champ refinedTitle) :
+- Tu dois générer un titre court, nettoyé et percutant pour le lieu dans le champ 'refinedTitle' (maximum 40 caractères).
+- Si le nom d'origine ou l'inscription fournie est un long pavé textuel brut de plaque commémorative, fais un travail de synthèse pour extraire uniquement le sujet historique principal (Exemple : transforme "EN AOUT 1914 LE 99E REGIMENT D'INFANTERIE EN GARNISON A LYON..." en "99e Régiment d'Infanterie").
+- N'inclus pas d'indications de date ou de lieu secondaires dans ce titre si le sujet se suffit à lui-même.
+
 CONSIGNE OUTILS IMPÉRATIVE :
 - Tu dois SYSTÉMATIQUEMENT chercher à enrichir tes connaissances en utilisant un outil disponible.
 - Si le lieu possède un tag historique, culturel ou une page Wikipédia fournie, utilise en priorité 'getWikipediaSummary'.
@@ -68,13 +74,17 @@ export const RESPONSE_JSON_SCHEMA = {
       type: "STRING",
       description: "Le récit fluide du lieu. Inclus impérativement l'artiste et les matériaux s'ils sont fournis dans les tags OSM.",
     },
+    refinedTitle: {
+      type: "STRING",
+      description: "Titre synthétique, propre et nettoyé du monument ou sujet historique (max 40 caractères).",
+    },
     actualToolsUsed: {
       type: "ARRAY",
       items: { type: "STRING" },
       description: "Les noms des outils (ex: 'getWikipediaSummary') dont les infos ont été VRAIMENT utiles pour rédiger le message.",
     },
   },
-  required: ["message", "actualToolsUsed"],
+  required: ["message", "refinedTitle", "actualToolsUsed"],
 };
 
 const CULTURAL_PREFIXES_SET = new Set(CULTURAL_TAG_PREFIXES);
