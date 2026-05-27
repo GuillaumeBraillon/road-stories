@@ -132,6 +132,7 @@ function extractText(data: GeminiApiResponse): string {
  * @throws Error en cas d'erreur API
  */
 async function callGeminiAPI(apiKey: string, contents: GeminiContent[], config: GeminiCallConfig): Promise<GeminiApiResponse> {
+  logger.debug("gemini API", `Modèle Gemini utilisé : ${GEMINI_MODEL}`);
   const url = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
   logger.debug("gemini API", `Calling Gemini API with tools: ${config.withTools ? "enabled" : "disabled"}`);
   const body = {
@@ -262,11 +263,18 @@ export default async function handler(request: Request): Promise<Response> {
         responseSchema: RESPONSE_JSON_SCHEMA,
       });
 
+      const followUpText = extractText(followUp) ?? "{}";
+
       try {
-        const parsed = JSON.parse(extractText(followUp) ?? "{}");
+        const cleanJsonText = followUpText
+          .replace(/```json/g, "")
+          .replace(/```/g, "")
+          .trim();
+        const parsed = JSON.parse(cleanJsonText);
+
         logger.debug("gemini API", "Texte de consolidation JSON extrait de Gemini:", parsed);
         const actualToolsUsed = Array.isArray(parsed.actualToolsUsed) ? parsed.actualToolsUsed : [];
-        logger.debug("gemini API", `Outils réellement utilisés selon Gemini : ${actualToolsUsed.join(", ")}`);
+
         return new Response(
           JSON.stringify({
             message: parsed.message ?? "",
@@ -275,27 +283,63 @@ export default async function handler(request: Request): Promise<Response> {
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
-      } catch {
-        // Fallback si le parsing JSON échoue
-        return new Response(JSON.stringify({ message: extractText(followUp), toolsUsed }), { status: 200, headers: { "Content-Type": "application/json" } });
+      } catch (error) {
+        logger.error("gemini API", "Échec du parsing JSON au second tour, fallback RegExp de secours", error);
+
+        const messageMatch = followUpText.match(/"message"\s*:\s*"([\s\S]*?)"/);
+        const titleMatch = followUpText.match(/"refinedTitle"\s*:\s*"([\s\S]*?)"/);
+
+        return new Response(
+          JSON.stringify({
+            message: messageMatch ? messageMatch[1] : followUpText,
+            refinedTitle: titleMatch ? titleMatch[1] : undefined,
+            toolsUsed,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
       }
     }
 
     // 5. Cas nominal : pas de tool call, retour direct
     logger.debug("gemini API", "Aucun appel d'outil effectué par Gemini, retour du message généré directement.");
+    logger.debug("gemini API", "Contenu brut de la réponse Gemini:", data);
+    const rawText = extractText(data);
+    logger.debug("gemini API", "Texte brut extrait de la réponse Gemini:", rawText);
+
     try {
-      const parsed = JSON.parse(extractText(data) ?? "{}");
+      const cleanJsonText = rawText
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+      const parsed = JSON.parse(cleanJsonText);
+      logger.debug("gemini API", "Texte JSON parsé avec succès sans outils:", parsed);
+
       return new Response(
         JSON.stringify({
-          message: parsed.message ?? "",
+          message: parsed.text ?? parsed.content ?? "",
           refinedTitle: parsed.refinedTitle ?? undefined,
-          toolsUsed: toolsUsed,
+          toolsUsed,
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
       );
-    } catch {
-      // Fallback si le texte n'était exceptionnellement pas du JSON
-      return new Response(JSON.stringify({ message: extractText(data), toolsUsed }), { status: 200, headers: { "Content-Type": "application/json" } });
+    } catch (error) {
+      logger.error("gemini API", "Échec du parsing JSON sans outils", error);
+
+      return new Response(
+        JSON.stringify({
+          message: rawText,
+          refinedTitle: undefined,
+          toolsUsed,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

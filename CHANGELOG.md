@@ -5,6 +5,20 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.23] - 2026-05-27
+
+### Ajouté
+
+- **Robustesse du parsing Gemini** : extraction unique du texte brut (évite les doubles traitements), suppression des fences Markdown (`json, `) avant appel à `JSON.parse`.
+- **Fallback regex de parsing** : en cas d'échec du parsing JSON, extraction sécurisée de `message` et `refinedTitle` depuis le texte brut.
+
+### Modifié
+
+- **Handler Gemini** : logs enrichis avec modèle sélectionné, debug détaillé du parsing et erreurs plus explicites.
+- **Normalisation des réponses** : priorité à `parsed.text` ou `parsed.content` si disponibles pour harmonisation des formats.
+- **API Response** : amélioration du format de réponse et des headers HTTP pour plus de cohérence.
+- **Logger Wikipedia** : remplacement du tag `[Action API]` par `[WIKIPEDIA API]` pour clarifier l'origine des logs.
+
 ## [1.0.22] - 2026-05-27
 
 ### Ajouté

@@ -73,13 +73,13 @@ async function searchPageTitle(keyword: string, signal: AbortSignal): Promise<st
 
   try {
     const response = await fetch(`${WIKIPEDIA_ACTION_API}?${params.toString()}`, { signal });
-    logger.debug("wikipedia", `[Action API] Recherche du titre pour "${keyword}" — Statut: ${response.status}`);
+    logger.debug("wikipedia", `[WIKIPEDIA API] Recherche du titre pour "${keyword}" — Statut: ${response.status}`);
     if (!response.ok) return null;
     const data = (await response.json()) as MediaWikiSearchResponse;
-    logger.debug("wikipedia", `[Action API] Résultat de recherche pour "${keyword}":`, data);
+    logger.debug("wikipedia", `[WIKIPEDIA API] Résultat de recherche pour "${keyword}":`, data);
     return data.query?.search?.[0]?.title ?? null;
   } catch (error) {
-    logger.error("wikipedia", `[Action API] Échec de la recherche pour "${keyword}":`, error);
+    logger.error("wikipedia", `[WIKIPEDIA API] Échec de la recherche pour "${keyword}":`, error);
     return null;
   }
 }
