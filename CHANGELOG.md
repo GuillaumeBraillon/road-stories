@@ -5,6 +5,16 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 et ce projet respecte le [Versionnage Sémantique](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.25] - 2026-07-01
+
+### Added
+
+- `README.md` : réécriture complète — table des matières, captures d'écran, section AI Readiness Score (8.5/10), architecture détaillée par dossier (`components/`, `hooks/`, `services/`, `api/`), historique de conception (outils IA utilisés) et section Améliorations envisagées (recherche sémantique, mémoire persistante, contexte multi-tours, base de connaissances, nouveaux outils Gemini).
+
+### Changed
+
+- Documentation des variables d'environnement alignée sur `.env.example` (clés `VITE_GEMINI_API_KEY`, `GEMINI_API_KEY`, `VITE_GOOGLE_PLACES_API_KEY`, `GOOGLE_PLACES_API_KEY` — distinction client/serveur).
+
 ## [1.0.24] - 2026-05-27
 
 ### Added
